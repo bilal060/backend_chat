@@ -38,7 +38,7 @@ npm start
 
 ## Database
 
-SQLite database is automatically created at `database/capture.db`
+MongoDB database is used for all data storage. Configure `MONGODB_URI` in your `.env` file.
 
 ## File Storage
 

@@ -1,12 +1,12 @@
 /**
  * Database abstraction layer
- * Provides MongoDB interface that can replace SQLite
+ * MongoDB interface for all database operations
  */
 const { getDb, dbHelpers } = require('./mongodb');
 
 /**
- * MongoDB database wrapper that provides SQLite-compatible API
- * This allows routes to work with MongoDB using similar patterns
+ * MongoDB database wrapper
+ * Provides consistent database interface for routes
  */
 class MongoDBAdapter {
     constructor() {
@@ -20,7 +20,7 @@ class MongoDBAdapter {
         return this.db.collection(collectionName);
     }
 
-    // SQLite-compatible methods
+    // MongoDB query methods
     async get(collection, filter, callback) {
         try {
             const collectionObj = await this.getCollection(collection);

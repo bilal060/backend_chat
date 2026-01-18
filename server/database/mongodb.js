@@ -198,15 +198,15 @@ async function close() {
     }
 }
 
-// Helper methods for compatibility with SQLite-style API
+// Helper methods for MongoDB database operations
 const dbHelpers = {
-    // Equivalent to db.get()
+    // Get a single document
     async get(collection, filter) {
         const result = await db.collection(collection).findOne(filter);
         return result;
     },
 
-    // Equivalent to db.all()
+    // Get multiple documents
     async all(collection, filter = {}, options = {}) {
         let query = db.collection(collection).find(filter);
         
@@ -223,19 +223,19 @@ const dbHelpers = {
         return await query.toArray();
     },
 
-    // Equivalent to db.run() for INSERT
+    // Insert a single document
     async insert(collection, doc) {
         const result = await db.collection(collection).insertOne(doc);
         return { lastID: result.insertedId, changes: 1 };
     },
 
-    // Equivalent to db.run() for UPDATE
+    // Update documents
     async update(collection, filter, update) {
         const result = await db.collection(collection).updateMany(filter, { $set: update });
         return { changes: result.modifiedCount };
     },
 
-    // Equivalent to db.run() for DELETE
+    // Delete documents
     async delete(collection, filter) {
         const result = await db.collection(collection).deleteMany(filter);
         return { changes: result.deletedCount };
