@@ -93,8 +93,14 @@ const upload = multer({
     }
 });
 
-// Initialize database (PostgreSQL)
-const db = require('./database/postgres');
+// Initialize MongoDB database connection
+const { connect: connectMongoDB } = require('./database/mongodb');
+
+// Connect to MongoDB on server start
+connectMongoDB().catch(err => {
+    console.error('Failed to connect to MongoDB:', err);
+    process.exit(1);
+});
 
 // Initialize Firebase
 const { initializeFirebase } = require('./config/firebase');

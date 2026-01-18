@@ -4,7 +4,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const db = require('../database/init');
+const { getDb } = require('../database/mongodb');
+const websocketService = require('../services/websocketService');
 
 // Configure multer for media uploads
 const storage = multer.diskStorage({
@@ -31,7 +32,7 @@ const upload = multer({
 });
 
 // POST /api/media/upload
-router.post('/upload', upload.single('file'), (req, res) => {
+router.post('/upload', upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({
@@ -97,23 +98,26 @@ router.post('/upload', upload.single('file'), (req, res) => {
         
         // Save to database
         const deviceId = req.body.deviceId || null;
-        const stmt = db.prepare(`INSERT INTO media_files 
-            (id, deviceId, notificationId, localPath, remoteUrl, fileSize, mimeType, checksum, uploadStatus)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-        
+        const db = getDb();
         const mediaId = crypto.randomUUID();
-        stmt.run(
-            mediaId,
-            deviceId,
-            notificationId,
-            organizedPath,
-            organizedFileUrl,
-            req.file.size,
-            mimeTypeStr,
-            calculatedChecksum || checksum || '',
-            'SUCCESS'
-        );
-        stmt.finalize();
+        
+        const mediaDoc = {
+            id: mediaId,
+            deviceId: deviceId,
+            notificationId: notificationId,
+            localPath: organizedPath,
+            remoteUrl: organizedFileUrl,
+            fileSize: req.file.size,
+            mimeType: mimeTypeStr,
+            checksum: calculatedChecksum || checksum || '',
+            uploadStatus: 'SUCCESS',
+            uploadAttempts: 0,
+            lastUploadAttempt: null,
+            errorMessage: null,
+            createdAt: Math.floor(Date.now() / 1000)
+        };
+        
+        await db.collection('media_files').insertOne(mediaDoc);
         
         // Broadcast WebSocket update
         if (deviceId) {

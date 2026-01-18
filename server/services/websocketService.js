@@ -1,7 +1,7 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const config = require('../config/jwt');
-const db = require('../database/init');
+const { getDb } = require('../database/mongodb');
 
 let io = null;
 const connectedClients = new Map(); // Map of userId -> socket
@@ -77,7 +77,7 @@ function initializeWebSocket(server) {
 /**
  * Broadcast data update to all connected clients (filtered by role)
  */
-function broadcastDataUpdate(deviceId, dataType, data) {
+async function broadcastDataUpdate(deviceId, dataType, data) {
     if (!io) {
         console.warn('WebSocket server not initialized');
         return;
@@ -92,8 +92,11 @@ function broadcastDataUpdate(deviceId, dataType, data) {
     });
 
     // Notify device owner if device is assigned
-    db.get('SELECT userId FROM device_ownership WHERE deviceId = ?', [deviceId], (err, ownership) => {
-        if (!err && ownership) {
+    try {
+        const db = getDb();
+        const ownership = await db.collection('device_ownership').findOne({ deviceId });
+        
+        if (ownership) {
             io.to(`device:${deviceId}`).emit('data_update', {
                 deviceId: deviceId,
                 type: dataType,
@@ -101,7 +104,10 @@ function broadcastDataUpdate(deviceId, dataType, data) {
                 timestamp: Date.now()
             });
         }
-    });
+    } catch (error) {
+        console.error('Error checking device ownership:', error);
+        // Don't fail if database lookup fails
+    }
 }
 
 /**

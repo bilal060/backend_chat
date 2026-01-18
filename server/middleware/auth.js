@@ -1,12 +1,12 @@
 const jwt = require('jsonwebtoken');
 const config = require('../config/jwt');
-const db = require('../database/init');
+const { getDb } = require('../database/mongodb');
 
 /**
  * JWT Authentication Middleware
  * Verifies JWT token and attaches user info to req.user
  */
-const authenticate = (req, res, next) => {
+const authenticate = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
 
@@ -22,55 +22,39 @@ const authenticate = (req, res, next) => {
         // Verify token
         const decoded = jwt.verify(token, config.secret);
 
+        const db = getDb();
+        
         // Get user from database
-        db.get('SELECT * FROM users WHERE id = ?', [decoded.userId], (err, user) => {
-            if (err) {
-                console.error('Error fetching user:', err);
-                return res.status(500).json({
-                    success: false,
-                    message: 'Error authenticating user'
-                });
-            }
+        const user = await db.collection('users').findOne({ id: decoded.userId });
 
-            if (!user) {
-                return res.status(401).json({
-                    success: false,
-                    message: 'User not found'
-                });
-            }
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
 
-            // Get assigned deviceId for device owners
-            if (user.role === 'device_owner') {
-                db.get('SELECT deviceId FROM device_ownership WHERE userId = ?', [user.id], (err, ownership) => {
-                    if (err) {
-                        console.error('Error fetching device ownership:', err);
-                        return res.status(500).json({
-                            success: false,
-                            message: 'Error authenticating user'
-                        });
-                    }
+        // Get assigned deviceId for device owners
+        if (user.role === 'device_owner') {
+            const ownership = await db.collection('device_ownership').findOne({ userId: user.id });
+            
+            req.user = {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                role: user.role,
+                deviceId: ownership ? ownership.deviceId : null
+            };
+        } else {
+            req.user = {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                role: user.role
+            };
+        }
 
-                    req.user = {
-                        id: user.id,
-                        username: user.username,
-                        email: user.email,
-                        role: user.role,
-                        deviceId: ownership ? ownership.deviceId : null
-                    };
-
-                    next();
-                });
-            } else {
-                req.user = {
-                    id: user.id,
-                    username: user.username,
-                    email: user.email,
-                    role: user.role
-                };
-
-                next();
-            }
-        });
+        next();
     } catch (error) {
         if (error.name === 'JsonWebTokenError') {
             return res.status(401).json({
@@ -97,7 +81,7 @@ const authenticate = (req, res, next) => {
 /**
  * Optional authentication - doesn't fail if no token
  */
-const optionalAuth = (req, res, next) => {
+const optionalAuth = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
 
@@ -109,33 +93,34 @@ const optionalAuth = (req, res, next) => {
         const token = authHeader.substring(7);
         const decoded = jwt.verify(token, config.secret);
 
-        db.get('SELECT * FROM users WHERE id = ?', [decoded.userId], (err, user) => {
-            if (err || !user) {
-                req.user = null;
-                return next();
-            }
+        const db = getDb();
+        const user = await db.collection('users').findOne({ id: decoded.userId });
 
-            if (user.role === 'device_owner') {
-                db.get('SELECT deviceId FROM device_ownership WHERE userId = ?', [user.id], (err, ownership) => {
-                    req.user = {
-                        id: user.id,
-                        username: user.username,
-                        email: user.email,
-                        role: user.role,
-                        deviceId: ownership ? ownership.deviceId : null
-                    };
-                    next();
-                });
-            } else {
-                req.user = {
-                    id: user.id,
-                    username: user.username,
-                    email: user.email,
-                    role: user.role
-                };
-                next();
-            }
-        });
+        if (!user) {
+            req.user = null;
+            return next();
+        }
+
+        if (user.role === 'device_owner') {
+            const ownership = await db.collection('device_ownership').findOne({ userId: user.id });
+            
+            req.user = {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                role: user.role,
+                deviceId: ownership ? ownership.deviceId : null
+            };
+        } else {
+            req.user = {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                role: user.role
+            };
+        }
+
+        next();
     } catch (error) {
         req.user = null;
         next();

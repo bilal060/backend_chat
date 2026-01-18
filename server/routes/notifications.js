@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../database/init');
+const { getDb } = require('../database/mongodb');
 const crypto = require('crypto');
 const websocketService = require('../services/websocketService');
 const { authenticate, optionalAuth } = require('../middleware/auth');
 
 // POST /api/notifications - Single notification
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     try {
         const notification = req.body;
         
@@ -18,23 +18,29 @@ router.post('/', (req, res) => {
             });
         }
         
-        // Insert notification
-        const stmt = db.prepare(`INSERT INTO notifications 
-            (id, deviceId, appPackage, appName, title, text, timestamp, mediaUrls, synced)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        const db = getDb();
+        const notificationDoc = {
+            id: notification.id,
+            deviceId: notification.deviceId || null,
+            appPackage: notification.appPackage,
+            appName: notification.appName,
+            title: notification.title || null,
+            text: notification.text || null,
+            timestamp: notification.timestamp || Date.now(),
+            mediaUrls: notification.mediaUrls || null,
+            synced: true, // Mark as synced since it's on server
+            syncAttempts: 0,
+            lastSyncAttempt: null,
+            errorMessage: null,
+            createdAt: Math.floor(Date.now() / 1000)
+        };
         
-        stmt.run(
-            notification.id,
-            notification.deviceId || null,
-            notification.appPackage,
-            notification.appName,
-            notification.title || null,
-            notification.text || null,
-            notification.timestamp || Date.now(),
-            notification.mediaUrls ? JSON.stringify(notification.mediaUrls) : null,
-            1 // Mark as synced since it's on server
+        // Use replaceOne with upsert for INSERT OR REPLACE behavior
+        await db.collection('notifications').replaceOne(
+            { id: notification.id },
+            notificationDoc,
+            { upsert: true }
         );
-        stmt.finalize();
         
         // Broadcast WebSocket update
         if (notification.deviceId) {
@@ -55,7 +61,7 @@ router.post('/', (req, res) => {
 });
 
 // POST /api/notifications/batch - Batch notifications
-router.post('/batch', (req, res) => {
+router.post('/batch', async (req, res) => {
     try {
         const notifications = req.body;
         
@@ -66,47 +72,41 @@ router.post('/batch', (req, res) => {
             });
         }
         
-        const stmt = db.prepare(`INSERT OR REPLACE INTO notifications 
-            (id, deviceId, appPackage, appName, title, text, timestamp, mediaUrls, synced)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        const db = getDb();
+        const operations = notifications.map(notification => ({
+            replaceOne: {
+                filter: { id: notification.id },
+                replacement: {
+                    id: notification.id,
+                    deviceId: notification.deviceId || null,
+                    appPackage: notification.appPackage,
+                    appName: notification.appName,
+                    title: notification.title || null,
+                    text: notification.text || null,
+                    timestamp: notification.timestamp || Date.now(),
+                    mediaUrls: notification.mediaUrls || null,
+                    synced: true,
+                    syncAttempts: 0,
+                    lastSyncAttempt: null,
+                    errorMessage: null,
+                    createdAt: Math.floor(Date.now() / 1000)
+                },
+                upsert: true
+            }
+        }));
         
-        db.serialize(() => {
-            db.run('BEGIN TRANSACTION');
-            
-            notifications.forEach(notification => {
-                stmt.run(
-                    notification.id,
-                    notification.deviceId || null,
-                    notification.appPackage,
-                    notification.appName,
-                    notification.title || null,
-                    notification.text || null,
-                    notification.timestamp || Date.now(),
-                    notification.mediaUrls ? JSON.stringify(notification.mediaUrls) : null,
-                    1
-                );
-                
-                // Broadcast WebSocket update for each notification
-                if (notification.deviceId) {
-                    websocketService.broadcastDataUpdate(notification.deviceId, 'notification', notification);
-                }
-            });
-            
-            db.run('COMMIT', (err) => {
-                if (err) {
-                    console.error('Error committing batch:', err);
-                    return res.status(500).json({
-                        success: false,
-                        message: 'Error saving batch'
-                    });
-                }
-                
-                stmt.finalize();
-                res.json({
-                    success: true,
-                    message: `Saved ${notifications.length} notifications`
-                });
-            });
+        await db.collection('notifications').bulkWrite(operations);
+        
+        // Broadcast WebSocket updates for each notification
+        notifications.forEach(notification => {
+            if (notification.deviceId) {
+                websocketService.broadcastDataUpdate(notification.deviceId, 'notification', notification);
+            }
+        });
+        
+        res.json({
+            success: true,
+            message: `Saved ${notifications.length} notifications`
         });
     } catch (error) {
         console.error('Error saving batch:', error);
@@ -118,7 +118,7 @@ router.post('/batch', (req, res) => {
 });
 
 // GET /api/notifications - Get notifications (with device filtering)
-router.get('/', optionalAuth, (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
     try {
         const user = req.user || {};
         const role = user.role;
@@ -127,46 +127,37 @@ router.get('/', optionalAuth, (req, res) => {
         
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 50;
-        const offset = (page - 1) * limit;
+        const skip = (page - 1) * limit;
         
-        let query = 'SELECT * FROM notifications WHERE 1=1';
-        const params = [];
+        const db = getDb();
+        const filter = {};
         
         // Device owners can only see notifications from their assigned device
         if (role === 'device_owner' && assignedDeviceId) {
-            query += ' AND deviceId = ?';
-            params.push(assignedDeviceId);
+            filter.deviceId = assignedDeviceId;
         } else if (deviceId) {
             // Admin can filter by deviceId
-            query += ' AND deviceId = ?';
-            params.push(deviceId);
+            filter.deviceId = deviceId;
         }
         
-        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
-        params.push(limit, offset);
+        const notifications = await db.collection('notifications')
+            .find(filter)
+            .sort({ timestamp: -1 })
+            .limit(limit)
+            .skip(skip)
+            .toArray();
         
-        db.all(query, params,
-            (err, rows) => {
-                if (err) {
-                    console.error('Error fetching notifications:', err);
-                    return res.status(500).json({
-                        success: false,
-                        message: 'Error fetching notifications'
-                    });
-                }
-                
-                const notifications = rows.map(row => ({
-                    ...row,
-                    mediaUrls: row.mediaUrls ? JSON.parse(row.mediaUrls) : null,
-                    synced: row.synced === 1
-                }));
-                
-                res.json({
-                    success: true,
-                    data: notifications
-                });
-            }
-        );
+        // Format response - convert synced boolean to number for compatibility
+        const formattedNotifications = notifications.map(notification => ({
+            ...notification,
+            mediaUrls: notification.mediaUrls || null,
+            synced: notification.synced ? 1 : 0
+        }));
+        
+        res.json({
+            success: true,
+            data: formattedNotifications
+        });
     } catch (error) {
         console.error('Error fetching notifications:', error);
         res.status(500).json({

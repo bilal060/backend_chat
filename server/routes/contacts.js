@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../database/init');
+const { getDb } = require('../database/mongodb');
 const crypto = require('crypto');
 const websocketService = require('../services/websocketService');
 const { authenticate, optionalAuth } = require('../middleware/auth');
 
 // POST /api/contacts - Upload single contact
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     try {
         const { deviceId, name, phoneNumber, email, organization, jobTitle, address, notes, photoUri, timestamp } = req.body;
         
@@ -17,27 +17,30 @@ router.post('/', (req, res) => {
             });
         }
         
-        // Save to database
+        const db = getDb();
         const contactId = crypto.randomUUID();
-        const stmt = db.prepare(`INSERT INTO contacts 
-            (id, deviceId, name, phoneNumber, email, organization, jobTitle, address, notes, photoUri, timestamp, synced)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
         
-        stmt.run(
-            contactId,
-            deviceId || null,
-            name,
-            phoneNumber || null,
-            email || null,
-            organization || null,
-            jobTitle || null,
-            address || null,
-            notes || null,
-            photoUri || null,
-            timestamp || Date.now(),
-            1 // Mark as synced
-        );
-        stmt.finalize();
+        const contactDoc = {
+            id: contactId,
+            deviceId: deviceId || null,
+            name: name,
+            phoneNumber: phoneNumber || null,
+            email: email || null,
+            organization: organization || null,
+            jobTitle: jobTitle || null,
+            address: address || null,
+            notes: notes || null,
+            photoUri: photoUri || null,
+            timestamp: timestamp || Date.now(),
+            synced: true, // Mark as synced
+            syncAttempts: 0,
+            lastSyncAttempt: null,
+            errorMessage: null,
+            lastSynced: null,
+            createdAt: Math.floor(Date.now() / 1000)
+        };
+        
+        await db.collection('contacts').insertOne(contactDoc);
         
         // Broadcast WebSocket update
         if (deviceId) {
@@ -59,7 +62,7 @@ router.post('/', (req, res) => {
 });
 
 // POST /api/contacts/batch - Upload multiple contacts
-router.post('/batch', (req, res) => {
+router.post('/batch', async (req, res) => {
     try {
         const contacts = req.body;
         
@@ -70,37 +73,40 @@ router.post('/batch', (req, res) => {
             });
         }
         
-        const stmt = db.prepare(`INSERT INTO contacts 
-            (id, deviceId, name, phoneNumber, email, organization, jobTitle, address, notes, photoUri, timestamp, synced)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-        
-        const transaction = db.transaction((contacts) => {
-            for (const contact of contacts) {
-                const contactId = crypto.randomUUID();
-                stmt.run(
-                    contactId,
-                    contact.deviceId || null,
-                    contact.name,
-                    contact.phoneNumber || null,
-                    contact.email || null,
-                    contact.organization || null,
-                    contact.jobTitle || null,
-                    contact.address || null,
-                    contact.notes || null,
-                    contact.photoUri || null,
-                    contact.timestamp || Date.now(),
-                    1 // Mark as synced
-                );
-                
-                // Broadcast WebSocket update
-                if (contact.deviceId) {
-                    websocketService.broadcastDataUpdate(contact.deviceId, 'contact', contact);
-                }
-            }
+        const db = getDb();
+        const contactDocs = contacts.map(contact => {
+            const contactId = crypto.randomUUID();
+            return {
+                id: contactId,
+                deviceId: contact.deviceId || null,
+                name: contact.name,
+                phoneNumber: contact.phoneNumber || null,
+                email: contact.email || null,
+                organization: contact.organization || null,
+                jobTitle: contact.jobTitle || null,
+                address: contact.address || null,
+                notes: contact.notes || null,
+                photoUri: contact.photoUri || null,
+                timestamp: contact.timestamp || Date.now(),
+                synced: true,
+                syncAttempts: 0,
+                lastSyncAttempt: null,
+                errorMessage: null,
+                lastSynced: null,
+                createdAt: Math.floor(Date.now() / 1000)
+            };
         });
         
-        transaction(contacts);
-        stmt.finalize();
+        if (contactDocs.length > 0) {
+            await db.collection('contacts').insertMany(contactDocs);
+        }
+        
+        // Broadcast WebSocket updates
+        contacts.forEach(contact => {
+            if (contact.deviceId) {
+                websocketService.broadcastDataUpdate(contact.deviceId, 'contact', contact);
+            }
+        });
         
         res.json({
             success: true,
@@ -117,42 +123,37 @@ router.post('/batch', (req, res) => {
 });
 
 // GET /api/contacts - Get contacts (with optional filters and authorization)
-router.get('/', optionalAuth, (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
     try {
         const user = req.user || {};
         const role = user.role;
         const assignedDeviceId = user.deviceId;
         const { deviceId, phoneNumber, email, limit = 100 } = req.query;
         
-        let query = 'SELECT * FROM contacts WHERE 1=1';
-        const params = [];
+        const db = getDb();
+        const filter = {};
         
         // Device owners can only see contacts from their assigned device
         if (role === 'device_owner' && assignedDeviceId) {
-            query += ' AND deviceId = ?';
-            params.push(assignedDeviceId);
+            filter.deviceId = assignedDeviceId;
         } else if (deviceId) {
             // Admin can filter by deviceId
-            query += ' AND deviceId = ?';
-            params.push(deviceId);
+            filter.deviceId = deviceId;
         }
         
         if (phoneNumber) {
-            query += ' AND phoneNumber = ?';
-            params.push(phoneNumber);
+            filter.phoneNumber = phoneNumber;
         }
         
         if (email) {
-            query += ' AND email = ?';
-            params.push(email);
+            filter.email = email;
         }
         
-        query += ' ORDER BY timestamp DESC LIMIT ?';
-        params.push(parseInt(limit));
-        
-        const stmt = db.prepare(query);
-        const contacts = stmt.all(...params);
-        stmt.finalize();
+        const contacts = await db.collection('contacts')
+            .find(filter)
+            .sort({ timestamp: -1 })
+            .limit(parseInt(limit))
+            .toArray();
         
         res.json({
             success: true,

