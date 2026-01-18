@@ -13,6 +13,10 @@ const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy - Required when behind a reverse proxy (Render, Heroku, etc.)
+// This allows Express to trust X-Forwarded-* headers
+app.set('trust proxy', process.env.TRUST_PROXY !== 'false' ? 1 : false);
+
 // Middleware
 app.use(cors());
 app.use(compression());
@@ -22,7 +26,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100 // limit each IP to 100 requests per windowMs
+    max: 100, // limit each IP to 100 requests per windowMs
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    // Trust proxy is already set above, so rate limiter will use X-Forwarded-For correctly
 });
 app.use('/api/', limiter);
 
