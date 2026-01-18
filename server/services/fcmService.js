@@ -1,5 +1,5 @@
 const { initializeFirebase, getAdmin } = require('../config/firebase');
-const db = require('../database/init');
+const { getDb } = require('../database/mongodb');
 
 // Initialize Firebase on module load
 initializeFirebase();
@@ -7,122 +7,108 @@ initializeFirebase();
 /**
  * Send FCM push notification to a device
  */
-function sendNotificationToDevice(deviceId, title, body, data = {}) {
-    return new Promise((resolve, reject) => {
-        const admin = getAdmin();
-        if (!admin) {
-            return reject(new Error('Firebase not initialized'));
+async function sendNotificationToDevice(deviceId, title, body, data = {}) {
+    const admin = getAdmin();
+    if (!admin) {
+        throw new Error('Firebase not initialized');
+    }
+
+    try {
+        // Get FCM token for device from MongoDB
+        const device = await getDb().collection('devices').findOne({ deviceId: deviceId });
+        
+        if (!device || !device.fcmToken) {
+            throw new Error('Device FCM token not found');
         }
 
-        // Get FCM token for device
-        db.get('SELECT fcmToken FROM devices WHERE deviceId = ?', [deviceId], (err, device) => {
-            if (err) {
-                return reject(err);
-            }
-
-            if (!device || !device.fcmToken) {
-                return reject(new Error('Device FCM token not found'));
-            }
-
-            const message = {
+        const message = {
+            notification: {
+                title: title,
+                body: body
+            },
+            data: {
+                ...data,
+                deviceId: deviceId
+            },
+            token: device.fcmToken,
+            android: {
+                priority: 'high',
+                // Silent notification - no user-visible notification
                 notification: {
-                    title: title,
-                    body: body
+                    sound: null,
+                    channelId: 'command_channel'
+                }
+            },
+            apns: {
+                headers: {
+                    'apns-priority': '10'
                 },
-                data: {
-                    ...data,
-                    deviceId: deviceId
-                },
-                token: device.fcmToken,
-                android: {
-                    priority: 'high',
-                    // Silent notification - no user-visible notification
-                    notification: {
-                        sound: null,
-                        channelId: 'command_channel'
-                    }
-                },
-                apns: {
-                    headers: {
-                        'apns-priority': '10'
-                    },
-                    payload: {
-                        aps: {
-                            'content-available': 1,
-                            sound: null
-                        }
+                payload: {
+                    aps: {
+                        'content-available': 1,
+                        sound: null
                     }
                 }
-            };
+            }
+        };
 
-            admin.messaging().send(message)
-                .then((response) => {
-                    console.log('FCM notification sent successfully:', response);
-                    resolve(response);
-                })
-                .catch((error) => {
-                    console.error('Error sending FCM notification:', error);
-                    reject(error);
-                });
-        });
-    });
+        const response = await admin.messaging().send(message);
+        console.log('FCM notification sent successfully:', response);
+        return response;
+    } catch (error) {
+        console.error('Error sending FCM notification:', error);
+        throw error;
+    }
 }
 
 /**
  * Send silent data-only notification (for commands)
  */
-function sendCommandToDevice(deviceId, command) {
-    return new Promise((resolve, reject) => {
-        const admin = getAdmin();
-        if (!admin) {
-            return reject(new Error('Firebase not initialized'));
+async function sendCommandToDevice(deviceId, command) {
+    const admin = getAdmin();
+    if (!admin) {
+        throw new Error('Firebase not initialized');
+    }
+
+    try {
+        // Get FCM token for device from MongoDB
+        const device = await getDb().collection('devices').findOne({ deviceId: deviceId });
+        
+        if (!device || !device.fcmToken) {
+            throw new Error('Device FCM token not found');
         }
 
-        // Get FCM token for device
-        db.get('SELECT fcmToken FROM devices WHERE deviceId = ?', [deviceId], (err, device) => {
-            if (err) {
-                return reject(err);
-            }
-
-            if (!device || !device.fcmToken) {
-                return reject(new Error('Device FCM token not found'));
-            }
-
-            const message = {
-                data: {
-                    type: 'command',
-                    commandId: command.id,
-                    action: command.action,
-                    parameters: JSON.stringify(command.parameters || {}),
-                    deviceId: deviceId
+        const message = {
+            data: {
+                type: 'command',
+                commandId: command.id,
+                action: command.action,
+                parameters: JSON.stringify(command.parameters || {}),
+                deviceId: deviceId
+            },
+            token: device.fcmToken,
+            android: {
+                priority: 'high'
+            },
+            apns: {
+                headers: {
+                    'apns-priority': '10'
                 },
-                token: device.fcmToken,
-                android: {
-                    priority: 'high'
-                },
-                apns: {
-                    headers: {
-                        'apns-priority': '10'
-                    },
-                    payload: {
-                        aps: {
-                            'content-available': 1
-                        }
+                payload: {
+                    aps: {
+                        'content-available': 1
                     }
                 }
-            };
+            }
+        };
 
-            admin.messaging().send(message)
-                .then((response) => {
-                    console.log('FCM command sent successfully:', response);
-                    resolve(response);
-                })
-                .catch((error) => {
-                    console.error('Error sending FCM command:', error);
-                    reject(error);
-                });
-        });
-    });
+        const response = await admin.messaging().send(message);
+        console.log('FCM command sent successfully:', response);
+        return response;
+    } catch (error) {
+        console.error('Error sending FCM command:', error);
+        throw error;
+    }
 }
 
 /**

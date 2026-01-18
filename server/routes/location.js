@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../database/init');
+// No database needed for location routes - just WebSocket broadcasting
 const { v4: uuidv4 } = require('uuid');
 const websocketService = require('../services/websocketService');
 const { authenticate, optionalAuth } = require('../middleware/auth');

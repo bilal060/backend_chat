@@ -264,8 +264,8 @@ async function initializeDatabase() {
     }
 }
 
-// Initialize on module load
-initializeDatabase().catch(console.error);
+// Initialize on module load - DISABLED (migrated to MongoDB)
+// initializeDatabase().catch(console.error);
 
 // Helper function to execute queries
 async function query(text, params) {
