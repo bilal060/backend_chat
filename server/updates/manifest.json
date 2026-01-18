@@ -1,0 +1,11 @@
+{
+  "latest_version": "1.0.0",
+  "version_code": 1,
+  "min_supported_version": "1.0.0",
+  "update_url": "https://your-domain.com/updates/apks/app-v1.0.0.apk",
+  "file_size": 0,
+  "checksum": "sha256:",
+  "release_date": "2024-01-15T10:00:00Z",
+  "force_update": false,
+  "update_message": "Initial release"
+}

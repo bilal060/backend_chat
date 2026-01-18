@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "466716330460",
+    "project_id": "receiver-app-47f7e",
+    "storage_bucket": "receiver-app-47f7e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:466716330460:android:9649f804e4aa393d94e719",
+        "android_client_info": {
+          "package_name": "com.chats.capture"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyClXrbQxdfTCm1oiPsRLwKgZP1jPu4mxX8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
