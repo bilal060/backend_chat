@@ -28,6 +28,7 @@ router.post('/', async (req, res) => {
             text: notification.text || null,
             timestamp: notification.timestamp || Date.now(),
             mediaUrls: notification.mediaUrls || null,
+            serverMediaUrls: notification.serverMediaUrls || null,
             synced: true, // Mark as synced since it's on server
             syncAttempts: 0,
             lastSyncAttempt: null,
@@ -85,6 +86,7 @@ router.post('/batch', async (req, res) => {
                     text: notification.text || null,
                     timestamp: notification.timestamp || Date.now(),
                     mediaUrls: notification.mediaUrls || null,
+                    serverMediaUrls: notification.serverMediaUrls || null,
                     synced: true,
                     syncAttempts: 0,
                     lastSyncAttempt: null,
@@ -151,6 +153,7 @@ router.get('/', optionalAuth, async (req, res) => {
         const formattedNotifications = notifications.map(notification => ({
             ...notification,
             mediaUrls: notification.mediaUrls || null,
+            serverMediaUrls: notification.serverMediaUrls || null,
             synced: notification.synced ? 1 : 0
         }));
         

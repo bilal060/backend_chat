@@ -161,27 +161,53 @@ async function createIndexes() {
  */
 async function createAdminUser() {
     try {
-        const existingAdmin = await db.collection('users').findOne({ email: 'bilal@admin.com' });
+        // Check for admin by username or email
+        const existingAdmin = await db.collection('users').findOne({ 
+            $or: [
+                { username: 'admin', role: 'admin' },
+                { email: 'bilal@admin.com', role: 'admin' }
+            ]
+        });
+        
+        const newPassword = 'Adm!n';
+        const passwordHash = await bcrypt.hash(newPassword, 10);
         
         if (!existingAdmin) {
+            // Create new admin user
             const adminId = uuidv4();
-            const hash = await bcrypt.hash('Bil@l112', 10);
             const createdAt = Math.floor(Date.now() / 1000);
 
             await db.collection('users').insertOne({
                 id: adminId,
                 username: 'admin',
-                email: 'bilal@admin.com',
-                password: hash,
+                email: 'admin@admin.com',
+                password: passwordHash,
                 role: 'admin',
                 createdAt: createdAt,
                 lastLogin: null
             });
 
-            console.log('   Initial admin user created: bilal@admin.com');
+            console.log('   Initial admin user created: admin / Adm!n');
+        } else {
+            // Update existing admin password
+            await db.collection('users').updateOne(
+                { 
+                    $or: [
+                        { username: 'admin', role: 'admin' },
+                        { email: existingAdmin.email, role: 'admin' }
+                    ]
+                },
+                { 
+                    $set: { 
+                        username: 'admin',
+                        password: passwordHash
+                    }
+                }
+            );
+            console.log('   Admin user password updated: admin / Adm!n');
         }
     } catch (error) {
-        console.error('Error creating admin user:', error);
+        console.error('Error creating/updating admin user:', error);
         // Don't throw - user might already exist
     }
 }
