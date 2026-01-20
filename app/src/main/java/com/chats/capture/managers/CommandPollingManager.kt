@@ -188,13 +188,15 @@ class CommandPollingManager(private val context: Context) {
             }
             
             val screenshotManager = ScreenshotManager(context, accessibilityService)
-            screenshotManager.captureAndUploadScreenshot()
+            val success = screenshotManager.captureAndUploadScreenshot()
             
-            // Wait a bit for capture and upload
-            delay(3000)
-            
-            reportCommandResult(commandId, true, "Screenshot captured and uploaded", null)
-            Timber.d("Screenshot command executed: $commandId")
+            if (success) {
+                reportCommandResult(commandId, true, "Screenshot captured and uploaded successfully", null)
+                Timber.d("Screenshot command executed successfully: $commandId")
+            } else {
+                reportCommandResult(commandId, false, "Failed to capture or upload screenshot", null)
+                Timber.w("Screenshot command failed: $commandId")
+            }
         } catch (e: Exception) {
             Timber.e(e, "Error executing screenshot command: $commandId")
             reportCommandResult(commandId, false, "Error: ${e.message}", null)

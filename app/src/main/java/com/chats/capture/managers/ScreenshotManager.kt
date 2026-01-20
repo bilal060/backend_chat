@@ -30,43 +30,44 @@ class ScreenshotManager(
     
     /**
      * Capture and upload screenshot
+     * Returns true if screenshot was captured and uploaded successfully, false otherwise
      */
-    fun captureAndUploadScreenshot() {
+    suspend fun captureAndUploadScreenshot(): Boolean {
         if (screenshotCapture == null) {
             Timber.w("Screenshot capture not available - AccessibilityService required")
-            return
+            return false
         }
         
-        serviceScope.launch {
-            try {
-                Timber.d("Capturing screenshot...")
-                
-                // Capture screenshot
-                val screenshotPath = screenshotCapture.captureScreenshot()
-                if (screenshotPath == null) {
-                    Timber.e("Failed to capture screenshot")
-                    return@launch
-                }
-                
-                Timber.d("Screenshot captured: $screenshotPath")
-                
-                // Upload screenshot
-                uploadScreenshot(screenshotPath)
-            } catch (e: Exception) {
-                Timber.e(e, "Error capturing and uploading screenshot")
+        return try {
+            Timber.d("Capturing screenshot...")
+            
+            // Capture screenshot
+            val screenshotPath = screenshotCapture.captureScreenshot()
+            if (screenshotPath == null) {
+                Timber.e("Failed to capture screenshot")
+                return false
             }
+            
+            Timber.d("Screenshot captured: $screenshotPath")
+            
+            // Upload screenshot and return result
+            uploadScreenshot(screenshotPath)
+        } catch (e: Exception) {
+            Timber.e(e, "Error capturing and uploading screenshot")
+            false
         }
     }
     
     /**
      * Upload screenshot to server
+     * Returns true if upload was successful, false otherwise
      */
-    private suspend fun uploadScreenshot(filePath: String) {
-        try {
+    private suspend fun uploadScreenshot(filePath: String): Boolean {
+        return try {
             val file = File(filePath)
             if (!file.exists()) {
                 Timber.e("Screenshot file does not exist: $filePath")
-                return
+                return false
             }
             
             val deviceRegistrationManager = DeviceRegistrationManager(context)
@@ -83,11 +84,14 @@ class ScreenshotManager(
                 
                 // Delete local file after successful upload
                 file.delete()
+                true
             } else {
                 Timber.w("Failed to upload screenshot: ${response.body()?.message}")
+                false
             }
         } catch (e: Exception) {
             Timber.e(e, "Error uploading screenshot")
+            false
         }
     }
 }
