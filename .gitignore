@@ -1,0 +1,33 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Build directories
+app/build/
+controller-app/build/
+*.apk
+*.aab
+
+# Firebase configuration files (contains sensitive keys)
+app/src/main/google-services.json
+server/firebase-credentials.json
+
+# Node.js dependencies
+node_modules/
+
+# Environment files
+server/.env
+server/.env.*
+!server/.env.example

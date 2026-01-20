@@ -1,0 +1,86 @@
+[
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/layout_fragment_remote_control.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/layout/fragment_remote_control.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/menu_main_menu.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/menu/main_menu.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/xml_data_extraction_rules.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/xml/data_extraction_rules.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/mipmap-xxxhdpi_ic_launcher_foreground.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/mipmap-xxxhdpi/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/layout_fragment_data_list.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/layout/fragment_data_list.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/layout_activity_settings.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/layout/activity_settings.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/layout_fragment_mdm_control.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/layout/fragment_mdm_control.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/layout_item_device.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/layout/item_device.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/mipmap-xxhdpi_ic_launcher_foreground.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/mipmap-xxhdpi/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/mipmap-hdpi_ic_launcher_foreground.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/mipmap-hdpi/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/drawable_status_background.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/drawable/status_background.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/layout_activity_login.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/layout/activity_login.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/mipmap-xhdpi_ic_launcher_foreground.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/mipmap-xhdpi/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/layout_fragment_device_data.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/layout/fragment_device_data.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/mipmap-mdpi_ic_launcher_foreground.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/mipmap-mdpi/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/layout_activity_device_detail.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/layout/activity_device_detail.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/layout_activity_main.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/xml_backup_rules.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/xml/backup_rules.xml"
+    },
+    {
+        "merged": "com.chats.controller.controller-app-debug-54:/layout_fragment_device_list.xml.flat",
+        "source": "com.chats.controller.controller-app-main-56:/layout/fragment_device_list.xml"
+    }
+]

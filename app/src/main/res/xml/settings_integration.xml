@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings integration for Android Settings menu -->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <Preference
+        android:key="app_settings"
+        android:title="Chat Capture Settings"
+        android:summary="Manage notification and chat capture settings">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.chats.capture"
+            android:targetClass="com.chats.capture.ui.MainActivity" />
+    </Preference>
+</PreferenceScreen>

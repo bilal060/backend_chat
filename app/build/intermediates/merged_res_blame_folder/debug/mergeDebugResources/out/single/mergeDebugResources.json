@@ -1,0 +1,94 @@
+[
+    {
+        "merged": "com.chats.capture.app-debug-48:/xml_settings_integration.xml.flat",
+        "source": "com.chats.capture.app-main-50:/xml/settings_integration.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/layout_fragment_mdm_management.xml.flat",
+        "source": "com.chats.capture.app-main-50:/layout/fragment_mdm_management.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/xml_preferences.xml.flat",
+        "source": "com.chats.capture.app-main-50:/xml/preferences.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.chats.capture.app-main-50:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/layout_fragment_settings.xml.flat",
+        "source": "com.chats.capture.app-main-50:/layout/fragment_settings.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/layout_item_app.xml.flat",
+        "source": "com.chats.capture.app-main-50:/layout/item_app.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/drawable_ic_keyboard.xml.flat",
+        "source": "com.chats.capture.app-main-50:/drawable/ic_keyboard.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/layout_item_credential.xml.flat",
+        "source": "com.chats.capture.app-main-50:/layout/item_credential.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/drawable_ic_notification.xml.flat",
+        "source": "com.chats.capture.app-main-50:/drawable/ic_notification.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/xml_accessibility_service_config.xml.flat",
+        "source": "com.chats.capture.app-main-50:/xml/accessibility_service_config.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/layout_item_notification.xml.flat",
+        "source": "com.chats.capture.app-main-50:/layout/item_notification.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/layout_fragment_credentials.xml.flat",
+        "source": "com.chats.capture.app-main-50:/layout/fragment_credentials.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/xml_data_extraction_rules.xml.flat",
+        "source": "com.chats.capture.app-main-50:/xml/data_extraction_rules.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.chats.capture.app-main-50:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/xml_file_provider_paths.xml.flat",
+        "source": "com.chats.capture.app-main-50:/xml/file_provider_paths.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/xml_network_security_config.xml.flat",
+        "source": "com.chats.capture.app-main-50:/xml/network_security_config.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/layout_activity_permission_setup.xml.flat",
+        "source": "com.chats.capture.app-main-50:/layout/activity_permission_setup.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/layout_item_chat.xml.flat",
+        "source": "com.chats.capture.app-main-50:/layout/item_chat.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/layout_fragment_notifications.xml.flat",
+        "source": "com.chats.capture.app-main-50:/layout/fragment_notifications.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/xml_backup_rules.xml.flat",
+        "source": "com.chats.capture.app-main-50:/xml/backup_rules.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/layout_activity_main.xml.flat",
+        "source": "com.chats.capture.app-main-50:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/xml_device_admin.xml.flat",
+        "source": "com.chats.capture.app-main-50:/xml/device_admin.xml"
+    },
+    {
+        "merged": "com.chats.capture.app-debug-48:/layout_fragment_chats.xml.flat",
+        "source": "com.chats.capture.app-main-50:/layout/fragment_chats.xml"
+    }
+]

@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    
+    <PreferenceCategory android:title="Permissions">
+        
+        <Preference
+            android:key="notification_permission"
+            android:title="Notification Access"
+            android:summary="Status: Unknown">
+            <intent
+                android:action="android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS" />
+        </Preference>
+        
+        <Preference
+            android:key="accessibility_permission"
+            android:title="Accessibility Service"
+            android:summary="Status: Unknown">
+            <intent
+                android:action="android.settings.ACTION_ACCESSIBILITY_SETTINGS" />
+        </Preference>
+        
+        <Preference
+            android:key="battery_optimization"
+            android:title="Battery Optimization"
+            android:summary="Status: Unknown">
+            <intent
+                android:action="android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+                android:data="package:com.chats.capture" />
+        </Preference>
+        
+        <Preference
+            android:key="usage_stats_permission"
+            android:title="Usage Stats"
+            android:summary="Status: Unknown">
+            <intent
+                android:action="android.settings.ACTION_USAGE_ACCESS_SETTINGS" />
+        </Preference>
+        
+    </PreferenceCategory>
+    
+    <PreferenceCategory android:title="Server Configuration">
+        
+        <EditTextPreference
+            android:key="server_url"
+            android:title="Server URL"
+            android:summary="Backend server URL"
+            android:dialogTitle="Enter Server URL"
+            android:dialogMessage="Enter the URL of your backend server"
+            android:defaultValue="https://your-server.com/" />
+        
+    </PreferenceCategory>
+    
+    <PreferenceCategory android:title="Sync Settings">
+        
+        <ListPreference
+            android:key="sync_interval"
+            android:title="Sync Interval"
+            android:summary="How often to sync data"
+            android:entries="@array/sync_interval_entries"
+            android:entryValues="@array/sync_interval_values"
+            android:defaultValue="3600" />
+        
+        <SwitchPreferenceCompat
+            android:key="sync_on_wifi_only"
+            android:title="Sync on WiFi Only"
+            android:summary="Only sync when connected to WiFi"
+            android:defaultValue="false" />
+        
+    </PreferenceCategory>
+    
+    <PreferenceCategory android:title="App Information">
+        
+        <Preference
+            android:key="app_version"
+            android:title="Version"
+            android:summary="1.0.0" />
+        
+        <Preference
+            android:key="app_status"
+            android:title="Status"
+            android:summary="Running" />
+        
+    </PreferenceCategory>
+    
+</PreferenceScreen>

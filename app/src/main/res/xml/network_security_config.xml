@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Allow cleartext traffic for local network IPs and localhost -->
+    <!-- This allows HTTP connections to local development servers -->
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Localhost -->
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <!-- Common local network IPs -->
+        <domain includeSubdomains="false">192.168.1.37</domain>
+        <domain includeSubdomains="false">192.168.0.0</domain>
+        <domain includeSubdomains="false">192.168.1.0</domain>
+        <domain includeSubdomains="false">10.0.0.0</domain>
+        <domain includeSubdomains="false">172.16.0.0</domain>
+    </domain-config>
+    
+    <!-- Base configuration: allow cleartext for debugging/development -->
+    <!-- In production, consider restricting this further -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_server_url">https://your-domain.com/updates</string>
+    <integer name="update_check_interval_hours">6</integer>
+    <bool name="update_only_on_wifi">false</bool>
+    <bool name="auto_install_updates">true</bool>
+</resources>
