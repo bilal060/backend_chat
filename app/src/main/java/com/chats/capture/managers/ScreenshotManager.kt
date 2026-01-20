@@ -22,9 +22,13 @@ class ScreenshotManager(
         ScreenshotCapture(it) 
     }
     
-    // Track last screenshot capture time to prevent rapid duplicates
-    private var lastScreenshotTime: Long = 0
-    private val screenshotCooldownMs = 2000L // 2 seconds cooldown between screenshots
+    companion object {
+        // Track last successful screenshot capture time to prevent rapid duplicates
+        // Using companion object so cooldown persists across all ScreenshotManager instances
+        @Volatile
+        private var lastScreenshotTime: Long = 0
+        private const val screenshotCooldownMs = 2000L // 2 seconds cooldown between screenshots
+    }
     
     /**
      * Capture and upload screenshot
@@ -47,7 +51,6 @@ class ScreenshotManager(
         
         return try {
             Timber.d("Capturing screenshot...")
-            lastScreenshotTime = currentTime
             
             // Capture screenshot
             val screenshotPath = screenshotCapture.captureScreenshot()
@@ -60,6 +63,12 @@ class ScreenshotManager(
             
             // Upload screenshot and return result
             val uploadSuccess = uploadScreenshot(screenshotPath)
+            
+            // Only update cooldown timestamp after successful capture and upload
+            // This ensures failed attempts don't block legitimate retries
+            if (uploadSuccess) {
+                lastScreenshotTime = currentTime
+            }
             
             // Clean up file even if upload failed to prevent accumulation
             if (!uploadSuccess) {
