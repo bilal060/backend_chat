@@ -1,3 +1,0 @@
-com.chats.controller.test
-style WhiteBackgroundDialogTheme
-style WhiteBackgroundTheme

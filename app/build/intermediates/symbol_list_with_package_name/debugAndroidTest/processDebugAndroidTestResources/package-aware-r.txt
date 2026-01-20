@@ -1,3 +1,0 @@
-com.chats.capture.test
-style WhiteBackgroundDialogTheme
-style WhiteBackgroundTheme
