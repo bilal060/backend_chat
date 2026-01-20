@@ -9,15 +9,16 @@ class DeviceDataPagerAdapter(
     private val deviceId: String
 ) : FragmentStateAdapter(fragmentActivity) {
     
-    override fun getItemCount(): Int = 5
+    override fun getItemCount(): Int = 6
     
     override fun createFragment(position: Int): Fragment {
         return when (position) {
             0 -> NotificationsFragment.newInstance(deviceId)
             1 -> ChatsFragment.newInstance(deviceId)
-            2 -> CredentialsFragment.newInstance(deviceId)
-            3 -> ScreenshotsFragment.newInstance(deviceId)
-            4 -> CommandHistoryFragment.newInstance(deviceId)
+            2 -> ContactsFragment.newInstance(deviceId)
+            3 -> CredentialsFragment.newInstance(deviceId)
+            4 -> ScreenshotsFragment.newInstance(deviceId)
+            5 -> CommandHistoryFragment.newInstance(deviceId)
             else -> throw IllegalArgumentException("Invalid position: $position")
         }
     }

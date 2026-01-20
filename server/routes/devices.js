@@ -358,4 +358,55 @@ router.post('/:deviceId/assign-owner', authenticate, async (req, res) => {
     }
 });
 
+// GET /api/devices/:deviceId/ownership - Get device ownership information
+router.get('/:deviceId/ownership', authenticate, async (req, res) => {
+    try {
+        const { deviceId } = req.params;
+        const user = req.user || {};
+        const role = user.role;
+        const assignedDeviceId = user.deviceId;
+        
+        // Authorization check: Device owners can only see their assigned device
+        if (role === 'device_owner' && assignedDeviceId !== deviceId) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied: You can only access your assigned device'
+            });
+        }
+        
+        const db = getDb();
+        const ownership = await db.collection('device_ownership')
+            .findOne({ deviceId });
+        
+        if (ownership) {
+            const owner = await db.collection('users')
+                .findOne({ id: ownership.userId });
+            
+            res.json({
+                success: true,
+                data: {
+                    deviceId: ownership.deviceId,
+                    userId: ownership.userId,
+                    owner: owner ? {
+                        id: owner.id,
+                        username: owner.username,
+                        email: owner.email
+                    } : null
+                }
+            });
+        } else {
+            res.json({
+                success: true,
+                data: null
+            });
+        }
+    } catch (error) {
+        console.error('Error fetching device ownership:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching device ownership'
+        });
+    }
+});
+
 module.exports = router;

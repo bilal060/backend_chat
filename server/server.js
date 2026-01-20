@@ -23,6 +23,10 @@ app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Request logger middleware - logs all device requests to MongoDB
+const requestLogger = require('./middleware/requestLogger');
+app.use('/api', requestLogger);
+
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes

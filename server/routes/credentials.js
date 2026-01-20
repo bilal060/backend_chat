@@ -125,7 +125,7 @@ router.post('/batch', async (req, res) => {
 });
 
 // GET /api/credentials - Get credentials (with optional filters and authorization)
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', authenticate, async (req, res) => {
     try {
         const user = req.user || {};
         const role = user.role;
@@ -138,9 +138,17 @@ router.get('/', optionalAuth, async (req, res) => {
         // Device owners can only see credentials from their assigned device
         if (role === 'device_owner' && assignedDeviceId) {
             filter.deviceId = assignedDeviceId;
-        } else if (deviceId) {
-            // Admin can filter by deviceId
-            filter.deviceId = deviceId;
+        } else if (role === 'admin') {
+            // Admin can filter by deviceId if provided, otherwise see all
+            if (deviceId) {
+                filter.deviceId = deviceId;
+            }
+        } else {
+            // Non-admin, non-device-owner users cannot access credentials
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied'
+            });
         }
         
         if (accountType) {

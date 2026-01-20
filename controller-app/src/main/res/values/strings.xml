@@ -66,6 +66,7 @@
     <string name="no_data">No data available</string>
     <string name="no_notifications">No notifications found</string>
     <string name="no_chats">No chats found</string>
+    <string name="no_contacts">No contacts found</string>
     <string name="no_credentials">No credentials found</string>
     <string name="no_screenshots">No screenshots found</string>
     <string name="no_commands">No commands found</string>

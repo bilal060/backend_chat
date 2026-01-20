@@ -52,6 +52,13 @@ interface ControllerApiService {
         @Query("limit") limit: Int = 50
     ): Response<ApiResponse<List<Chat>>>
     
+    @GET("api/contacts")
+    suspend fun getDeviceContacts(
+        @Query("deviceId") deviceId: String,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 50
+    ): Response<ApiResponse<List<Contact>>>
+    
     @GET("api/credentials")
     suspend fun getDeviceCredentials(
         @Query("deviceId") deviceId: String,

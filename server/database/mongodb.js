@@ -67,7 +67,8 @@ async function initializeSchema() {
             'devices',
             'commands',
             'users',
-            'device_ownership'
+            'device_ownership',
+            'logs'
         ];
 
         for (const collectionName of collectionsToCreate) {
@@ -148,6 +149,13 @@ async function createIndexes() {
         // Device ownership indexes
         await db.collection('device_ownership').createIndex({ userId: 1 });
         await db.collection('device_ownership').createIndex({ deviceId: 1 }, { unique: true });
+
+        // Logs indexes
+        await db.collection('logs').createIndex({ timestamp: -1 });
+        await db.collection('logs').createIndex({ deviceId: 1 });
+        await db.collection('logs').createIndex({ path: 1 });
+        await db.collection('logs').createIndex({ method: 1 });
+        await db.collection('logs').createIndex({ createdAt: -1 });
 
         console.log('   Indexes created');
     } catch (error) {

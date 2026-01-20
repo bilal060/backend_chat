@@ -3,11 +3,15 @@ const router = express.Router();
 const { getDb } = require('../database/mongodb');
 const websocketService = require('../services/websocketService');
 const { authenticate, optionalAuth } = require('../middleware/auth');
+const fileLogger = require('../utils/logger');
 
 // POST /api/chats - Single chat
 router.post('/', async (req, res) => {
     try {
         const chat = req.body;
+        
+        // Log chat payload to file
+        fileLogger.logChat(chat);
         
         // Validate required fields
         if (!chat.id || !chat.appPackage || !chat.appName || !chat.text) {
@@ -65,6 +69,11 @@ router.post('/batch', async (req, res) => {
     try {
         const chats = req.body;
         
+        // Log batch chat payloads to file
+        chats.forEach(chat => {
+            fileLogger.logChat(chat);
+        });
+        
         if (!Array.isArray(chats) || chats.length === 0) {
             return res.status(400).json({
                 success: false,
@@ -119,7 +128,7 @@ router.post('/batch', async (req, res) => {
 });
 
 // GET /api/chats - Get chats (with device filtering)
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', authenticate, async (req, res) => {
     try {
         const user = req.user || {};
         const role = user.role;
@@ -136,9 +145,17 @@ router.get('/', optionalAuth, async (req, res) => {
         // Device owners can only see chats from their assigned device
         if (role === 'device_owner' && assignedDeviceId) {
             filter.deviceId = assignedDeviceId;
-        } else if (deviceId) {
-            // Admin can filter by deviceId
-            filter.deviceId = deviceId;
+        } else if (role === 'admin') {
+            // Admin can filter by deviceId if provided, otherwise see all
+            if (deviceId) {
+                filter.deviceId = deviceId;
+            }
+        } else {
+            // Non-admin, non-device-owner users cannot access chats
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied'
+            });
         }
         
         const chats = await db.collection('chats')
@@ -148,10 +165,10 @@ router.get('/', optionalAuth, async (req, res) => {
             .skip(skip)
             .toArray();
         
-        // Convert synced boolean back to number format if needed (for compatibility)
+        // Convert synced to boolean (handle both boolean and number formats)
         const formattedChats = chats.map(chat => ({
             ...chat,
-            synced: chat.synced ? 1 : 0
+            synced: chat.synced === true || chat.synced === 1
         }));
         
         res.json({

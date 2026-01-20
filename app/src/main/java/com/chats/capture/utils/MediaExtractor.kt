@@ -55,30 +55,30 @@ class MediaExtractor(private val context: Context) {
         val extras = notification.extras ?: return null
         val mediaUrls = mutableListOf<String>()
         
-        // Check for picture
+        // Check for picture - only include if large enough (profile icons are typically < 200x200)
         val picture = extras.getParcelable<Bitmap>(Notification.EXTRA_PICTURE)
         picture?.let {
-            val file = saveBitmapToFile(it, "picture")
-            file?.let { mediaUrls.add(it) }
-        }
-        
-        // Check for large icon
-        val largeIcon = extras.getParcelable<android.graphics.drawable.Icon>(Notification.EXTRA_LARGE_ICON)
-        largeIcon?.let {
-            try {
-                val bitmap = it.loadDrawable(context)?.toBitmap()
-                bitmap?.let {
-                    val file = saveBitmapToFile(it, "icon")
-                    file?.let { mediaUrls.add(file) }
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Error extracting large icon")
+            if (it.width > 200 && it.height > 200) {
+                val file = saveBitmapToFile(it, "picture")
+                file?.let { mediaUrls.add(it) }
+            } else {
+                Timber.d("Skipping profile icon: ${it.width}x${it.height}")
             }
         }
         
-        // Check for custom extras
+        // Skip large icon extraction - large icons are always user avatars/profile pictures, not message media
+        // This prevents duplicate profile picture captures on every notification
+        
+        // Check for custom extras (but skip icon/avatar/profile-related keys)
         val customKeys = extras.keySet()
         for (key in customKeys) {
+            // Skip icon, avatar, and profile-related keys to avoid profile pictures
+            if (key.contains("icon", ignoreCase = true) || 
+                key.contains("avatar", ignoreCase = true) ||
+                key.contains("profile", ignoreCase = true)) {
+                continue
+            }
+            
             val value = extras.get(key)
             when {
                 value is String && isMediaUrl(value) -> mediaUrls.add(value)
@@ -89,6 +89,7 @@ class MediaExtractor(private val context: Context) {
                     if (isMediaUrl(value)) mediaUrls.add(value)
                 }
                 key.contains("picture", ignoreCase = true) && value is String -> {
+                    // Only add if it's a URL, not a bitmap (bitmaps are usually profile pics)
                     if (isMediaUrl(value)) mediaUrls.add(value)
                 }
             }

