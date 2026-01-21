@@ -17,6 +17,9 @@ interface MediaFileDao {
     @Query("SELECT * FROM media_files WHERE id = :id")
     suspend fun getMediaFileById(id: String): MediaFile?
     
+    @Query("SELECT * FROM media_files WHERE checksum = :checksum LIMIT 1")
+    suspend fun findMediaFileByChecksum(checksum: String): MediaFile?
+    
     @Query("SELECT * FROM media_files WHERE uploadStatus IN ('PENDING', 'FAILED') ORDER BY createdAt ASC LIMIT :limit")
     suspend fun getPendingUploads(limit: Int = 50): List<MediaFile>
     

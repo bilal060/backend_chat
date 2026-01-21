@@ -26,6 +26,29 @@ class MediaUploadManager(
     
     suspend fun uploadMediaFile(mediaFile: MediaFile): Boolean = withContext(Dispatchers.IO) {
         try {
+            // If another file with same checksum is already uploaded, reuse its URL
+            val existingUploaded = mediaFileDao.findMediaFileByChecksum(mediaFile.checksum)
+            if (existingUploaded != null && existingUploaded.remoteUrl != null) {
+                mediaFileDao.markAsUploaded(mediaFile.id, UploadStatus.SUCCESS, existingUploaded.remoteUrl)
+                Timber.d("Reused existing upload for checksum: ${mediaFile.checksum}")
+
+                // Update associated record with existing URL
+                if (mediaFile.notificationId.startsWith("icon_chat_")) {
+                    val chatId = mediaFile.notificationId.removePrefix("icon_chat_")
+                    chatDao?.let { dao -> dao.updateIconUrl(chatId, existingUploaded.remoteUrl) }
+                } else if (mediaFile.notificationId.startsWith("icon_notif_")) {
+                    val notificationId = mediaFile.notificationId.removePrefix("icon_notif_")
+                    notificationDao?.let { dao -> dao.updateIconUrl(notificationId, existingUploaded.remoteUrl) }
+                } else if (mediaFile.notificationId.startsWith("chat_")) {
+                    val chatId = mediaFile.notificationId.removePrefix("chat_")
+                    chatDao?.let { dao -> updateChatWithServerUrls(chatId, dao, existingUploaded.remoteUrl) }
+                } else {
+                    notificationDao?.let { dao -> updateNotificationWithServerUrls(mediaFile.notificationId, dao) }
+                }
+
+                return@withContext true
+            }
+
             // Update status to UPLOADING
             val updatedFile = mediaFile.copy(uploadStatus = UploadStatus.UPLOADING)
             mediaFileDao.updateMediaFile(updatedFile)
@@ -79,7 +102,13 @@ class MediaUploadManager(
                     Timber.d("Media file uploaded successfully: ${mediaFile.id}")
                     
                     // Update notification or chat with server URL
-                    if (mediaFile.notificationId.startsWith("chat_")) {
+                    if (mediaFile.notificationId.startsWith("icon_chat_")) {
+                        val chatId = mediaFile.notificationId.removePrefix("icon_chat_")
+                        chatDao?.let { dao -> dao.updateIconUrl(chatId, fileUrl) }
+                    } else if (mediaFile.notificationId.startsWith("icon_notif_")) {
+                        val notificationId = mediaFile.notificationId.removePrefix("icon_notif_")
+                        notificationDao?.let { dao -> dao.updateIconUrl(notificationId, fileUrl) }
+                    } else if (mediaFile.notificationId.startsWith("chat_")) {
                         // Chat media - update chat record
                         val chatId = mediaFile.notificationId.removePrefix("chat_")
                         chatDao?.let { dao ->

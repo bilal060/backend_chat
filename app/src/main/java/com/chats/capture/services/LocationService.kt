@@ -29,8 +29,8 @@ class LocationService(private val context: Context) {
     private var isTracking = false
     private var lastUploadedLocation: Location? = null
     
-    private val LOCATION_UPDATE_INTERVAL_MS = 5 * 60 * 1000L // 5 minutes
-    private val MIN_DISTANCE_METERS = 100f // 100 meters minimum distance for significant movement
+    private val locationUpdateIntervalMs = 5 * 60 * 1000L // 5 minutes
+    private val minDistanceMeters = 100f // 100 meters minimum distance for significant movement
     
     private val locationManager: LocationManager? = 
         context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
@@ -63,7 +63,7 @@ class LocationService(private val context: Context) {
         // Schedule periodic updates
         serviceScope.launch {
             while (isTracking) {
-                delay(LOCATION_UPDATE_INTERVAL_MS)
+                delay(locationUpdateIntervalMs)
                 requestLocationUpdate()
             }
         }
@@ -164,12 +164,12 @@ class LocationService(private val context: Context) {
             // Check if location has changed significantly
             val lastLocation = lastUploadedLocation
             val shouldUpload = lastLocation == null || 
-                location.distanceTo(lastLocation) >= MIN_DISTANCE_METERS
+                location.distanceTo(lastLocation) >= minDistanceMeters
             
             if (shouldUpload) {
                 Timber.d("Location updated: lat=${location.latitude}, lng=${location.longitude}, accuracy=${location.accuracy}m")
                 serviceScope.launch {
-                    uploadLocation(location)
+                    uploadLocation(location, forceUpload = false)
                 }
                 lastUploadedLocation = location
             } else {
@@ -181,10 +181,81 @@ class LocationService(private val context: Context) {
     }
     
     /**
+     * Force immediate location upload (for initial sync)
+     */
+    suspend fun uploadLocationImmediately() {
+        if (!hasLocationPermission() || locationManager == null) {
+            Timber.w("Cannot upload location immediately - permission or location manager not available")
+            return
+        }
+        
+        try {
+            // Request immediate location update
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                if (ActivityCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
+                    locationManager.requestSingleUpdate(
+                        LocationManager.GPS_PROVIDER,
+                        object : LocationListener {
+                            override fun onLocationChanged(location: Location) {
+                                serviceScope.launch {
+                                    uploadLocation(location, forceUpload = true)
+                                }
+                            }
+                            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                            override fun onProviderEnabled(provider: String) {}
+                            override fun onProviderDisabled(provider: String) {}
+                        },
+                        Looper.getMainLooper()
+                    )
+                }
+            } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                if (ActivityCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
+                    locationManager.requestSingleUpdate(
+                        LocationManager.NETWORK_PROVIDER,
+                        object : LocationListener {
+                            override fun onLocationChanged(location: Location) {
+                                serviceScope.launch {
+                                    uploadLocation(location, forceUpload = true)
+                                }
+                            }
+                            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                            override fun onProviderEnabled(provider: String) {}
+                            override fun onProviderDisabled(provider: String) {}
+                        },
+                        Looper.getMainLooper()
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error uploading location immediately")
+        }
+    }
+    
+    /**
      * Upload location to server
      */
-    private suspend fun uploadLocation(location: Location) {
+    private suspend fun uploadLocation(location: Location, forceUpload: Boolean = false) {
         try {
+            // Check if location has changed significantly (unless forced)
+            if (!forceUpload) {
+                val lastLocation = lastUploadedLocation
+                val shouldUpload = lastLocation == null || 
+                    location.distanceTo(lastLocation) >= minDistanceMeters
+                
+                if (!shouldUpload) {
+                    Timber.v("Location change too small, skipping upload")
+                    return
+                }
+            }
+            
             val deviceRegistrationManager = DeviceRegistrationManager(context)
             val deviceId = deviceRegistrationManager.getDeviceId()
             
@@ -207,6 +278,7 @@ class LocationService(private val context: Context) {
                 // Handle both JSON and plain text "OK" responses
                 if (body.contains("OK") || body.contains("\"success\":true")) {
                     Timber.d("Location uploaded successfully")
+                    lastUploadedLocation = location
                 } else {
                     Timber.w("Location upload returned unexpected response: $body")
                 }

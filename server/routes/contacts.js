@@ -139,7 +139,7 @@ router.get('/', authenticate, async (req, res) => {
         } else if (role === 'admin') {
             // Admin can filter by deviceId if provided, otherwise see all
             if (deviceId) {
-                filter.deviceId = deviceId;
+            filter.deviceId = deviceId;
             }
         } else {
             // Non-admin, non-device-owner users cannot access contacts

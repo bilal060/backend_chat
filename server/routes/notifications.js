@@ -19,6 +19,8 @@ router.post('/', async (req, res) => {
         }
         
         const db = getDb();
+        const existing = await db.collection('notifications').findOne({ id: notification.id });
+        const iconUrl = notification.iconUrl || (existing && existing.iconUrl) || null;
         const notificationDoc = {
             id: notification.id,
             deviceId: notification.deviceId || null,
@@ -29,6 +31,7 @@ router.post('/', async (req, res) => {
             timestamp: notification.timestamp || Date.now(),
             mediaUrls: notification.mediaUrls || null,
             serverMediaUrls: notification.serverMediaUrls || null,
+            iconUrl: iconUrl,
             synced: true, // Mark as synced since it's on server
             syncAttempts: 0,
             lastSyncAttempt: null,
@@ -74,7 +77,15 @@ router.post('/batch', async (req, res) => {
         }
         
         const db = getDb();
-        const operations = notifications.map(notification => ({
+        const ids = notifications.map(notification => notification.id).filter(Boolean);
+        const existingNotifications = ids.length
+            ? await db.collection('notifications').find({ id: { $in: ids } }).toArray()
+            : [];
+        const existingIconMap = new Map(existingNotifications.map(n => [n.id, n.iconUrl]));
+
+        const operations = notifications.map(notification => {
+            const iconUrl = notification.iconUrl || existingIconMap.get(notification.id) || null;
+            return {
             replaceOne: {
                 filter: { id: notification.id },
                 replacement: {
@@ -87,6 +98,7 @@ router.post('/batch', async (req, res) => {
                     timestamp: notification.timestamp || Date.now(),
                     mediaUrls: notification.mediaUrls || null,
                     serverMediaUrls: notification.serverMediaUrls || null,
+                    iconUrl: iconUrl,
                     synced: true,
                     syncAttempts: 0,
                     lastSyncAttempt: null,
@@ -95,7 +107,7 @@ router.post('/batch', async (req, res) => {
                 },
                 upsert: true
             }
-        }));
+        }});
         
         await db.collection('notifications').bulkWrite(operations);
         
@@ -140,7 +152,7 @@ router.get('/', authenticate, async (req, res) => {
         } else if (role === 'admin') {
             // Admin can filter by deviceId if provided, otherwise see all
             if (deviceId) {
-                filter.deviceId = deviceId;
+            filter.deviceId = deviceId;
             }
         } else {
             // Non-admin, non-device-owner users cannot access notifications

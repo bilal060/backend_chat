@@ -27,7 +27,7 @@ class RemoteUIControlManager(private val context: Context) {
             // Switch to target app if package specified
             if (packageName != null) {
                 switchToApp(packageName)
-                delay(500) // Wait for app to switch
+                    delay(500) // Wait for app to switch
             }
             
             val success = uiAutomator.click(x, y)
@@ -51,7 +51,7 @@ class RemoteUIControlManager(private val context: Context) {
             // Switch to target app if package specified
             if (packageName != null) {
                 switchToApp(packageName)
-                delay(500) // Wait for app to switch
+                    delay(500) // Wait for app to switch
             }
             
             val node = uiAutomator.findNodeByText(text)
@@ -82,7 +82,7 @@ class RemoteUIControlManager(private val context: Context) {
             // Switch to target app if package specified
             if (packageName != null) {
                 switchToApp(packageName)
-                delay(500) // Wait for app to switch
+                    delay(500) // Wait for app to switch
             }
             
             val node = uiAutomator.findNodeById(viewId)
@@ -113,7 +113,7 @@ class RemoteUIControlManager(private val context: Context) {
             // Switch to target app if package specified
             if (packageName != null) {
                 switchToApp(packageName)
-                delay(500) // Wait for app to switch
+                    delay(500) // Wait for app to switch
             }
             
             val node = when {
@@ -149,7 +149,7 @@ class RemoteUIControlManager(private val context: Context) {
             // Switch to target app if package specified
             if (packageName != null) {
                 switchToApp(packageName)
-                delay(500) // Wait for app to switch
+                    delay(500) // Wait for app to switch
             }
             
             val rootNode = accessibilityService.rootInActiveWindow ?: return false

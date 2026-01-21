@@ -50,6 +50,29 @@ class MediaExtractor(private val context: Context) {
         
         return@withContext null
     }
+
+    suspend fun extractNotificationIcon(notification: Notification): String? = withContext(Dispatchers.IO) {
+        try {
+            val extras = notification.extras
+            val iconBitmap = extras?.getParcelable<Bitmap>(Notification.EXTRA_LARGE_ICON)
+                ?: extras?.getParcelable(Notification.EXTRA_LARGE_ICON_BIG)
+
+            if (iconBitmap != null) {
+                return@withContext saveBitmapToFile(iconBitmap, "icon")
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val largeIcon = notification.getLargeIcon()
+                val drawable = largeIcon?.loadDrawable(context)
+                val bitmap = drawable?.toBitmap()
+                bitmap?.let { return@withContext saveBitmapToFile(it, "icon") }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error extracting notification icon")
+        }
+
+        return@withContext null
+    }
     
     private fun extractFromExtras(notification: Notification): List<String>? {
         val extras = notification.extras ?: return null
@@ -59,8 +82,8 @@ class MediaExtractor(private val context: Context) {
         val picture = extras.getParcelable<Bitmap>(Notification.EXTRA_PICTURE)
         picture?.let {
             if (it.width > 200 && it.height > 200) {
-                val file = saveBitmapToFile(it, "picture")
-                file?.let { mediaUrls.add(it) }
+            val file = saveBitmapToFile(it, "picture")
+            file?.let { mediaUrls.add(it) }
             } else {
                 Timber.d("Skipping profile icon: ${it.width}x${it.height}")
             }

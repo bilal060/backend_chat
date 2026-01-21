@@ -13,7 +13,7 @@ import com.chats.capture.managers.MediaUploadManager
 import com.chats.capture.network.ApiClient
 import com.chats.capture.network.NetworkManager
 import android.os.BatteryManager
-import android.support.v4.content.ContextCompat
+import androidx.core.content.ContextCompat
 import com.chats.capture.utils.AppStateManager
 import com.chats.capture.utils.RetryManager
 import kotlinx.coroutines.delay

@@ -18,6 +18,7 @@ import com.chats.capture.models.UploadStatus
 import com.chats.capture.ui.MainActivity
 import com.chats.capture.utils.MediaDownloader
 import com.chats.capture.utils.MediaExtractor
+import com.chats.capture.utils.IconCacheManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -98,10 +99,36 @@ class NotificationCaptureService : NotificationListenerService() {
             val title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()
             val text = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString()
             val appName = getAppName(sbn.packageName)
+
+            // Capture notification icon once per chat/notification key
+            val iconKey = buildIconKey(sbn.packageName, title, text)
+            if (iconKey != null && !IconCacheManager.hasIcon(this, iconKey)) {
+                val iconPath = mediaExtractor.extractNotificationIcon(notification)
+                if (iconPath != null) {
+                    val iconFile = java.io.File(iconPath)
+                    if (iconFile.exists() && iconFile.length() > 0) {
+                        val checksum = calculateFileChecksum(iconFile)
+                        val mimeType = determineMimeType(iconFile)
+                        val iconMediaFile = MediaFile(
+                            notificationId = "icon_notif_${sbn.id}",
+                            appPackage = sbn.packageName,
+                            localPath = iconPath,
+                            fileSize = iconFile.length(),
+                            mimeType = mimeType,
+                            checksum = checksum,
+                            uploadStatus = UploadStatus.PENDING
+                        )
+                        mediaFileDao.insertMediaFile(iconMediaFile)
+                        mediaUploadManager.uploadMediaFile(iconMediaFile)
+                        IconCacheManager.markIconCaptured(this, iconKey)
+                    }
+                }
+            }
             
             // Extract media URLs or file paths
             val mediaSources = mediaExtractor.extractMediaFromNotification(sbn)
             val downloadedMediaFiles = mutableListOf<String>()
+            val serverMediaUrls = mutableListOf<String>()
             
             // Process each media source sequentially to ensure all are processed
             mediaSources?.forEach { mediaSource ->
@@ -117,6 +144,14 @@ class NotificationCaptureService : NotificationListenerService() {
                             // Calculate checksum and determine MIME type
                             val checksum = calculateFileChecksum(file)
                             val mimeType = determineMimeType(file)
+
+                            // Deduplicate by checksum (use existing upload if available)
+                            val existing = mediaFileDao.findMediaFileByChecksum(checksum)
+                            if (existing != null && existing.remoteUrl != null) {
+                                serverMediaUrls.add(existing.remoteUrl)
+                                Timber.v("Reused existing media upload for checksum: $checksum")
+                                return@forEach
+                            }
                             
                             // Save media file to database
                             val mediaFile = MediaFile(
@@ -138,6 +173,19 @@ class NotificationCaptureService : NotificationListenerService() {
                         val downloadResult = mediaDownloader.downloadMedia(mediaSource, sbn.id.toString())
                         downloadResult.fold(
                             onSuccess = { downloadedMedia ->
+                                // Deduplicate by checksum (use existing upload if available)
+                                val existing = mediaFileDao.findMediaFileByChecksum(downloadedMedia.checksum)
+                                if (existing != null && existing.remoteUrl != null) {
+                                    serverMediaUrls.add(existing.remoteUrl)
+                                    // Clean up duplicate download
+                                    try {
+                                        java.io.File(downloadedMedia.localPath).delete()
+                                    } catch (_: Exception) {
+                                    }
+                                    Timber.v("Reused existing media upload for checksum: ${downloadedMedia.checksum}")
+                                    return@onSuccess
+                                }
+
                                 // Save media file to database
                                 val mediaFile = MediaFile(
                                     notificationId = sbn.id.toString(),
@@ -183,6 +231,7 @@ class NotificationCaptureService : NotificationListenerService() {
                     text = text,
                     timestamp = sbn.postTime,
                     mediaUrls = downloadedMediaFiles.ifEmpty { null },
+                    serverMediaUrls = serverMediaUrls.ifEmpty { null },
                     synced = false
                 )
                 
@@ -191,6 +240,9 @@ class NotificationCaptureService : NotificationListenerService() {
                 Timber.d("Notification captured: ${notificationData.id}")
             } else {
                 Timber.v("Duplicate notification skipped: ${duplicate.id}")
+                if (serverMediaUrls.isNotEmpty()) {
+                    notificationDao.updateServerMediaUrls(duplicate.id, serverMediaUrls)
+                }
             }
             
             // Trigger media upload if any
@@ -217,6 +269,15 @@ class NotificationCaptureService : NotificationListenerService() {
         } catch (e: Exception) {
             packageName
         }
+    }
+
+    private fun buildIconKey(appPackage: String, title: String?, text: String?): String? {
+        val label = when {
+            !title.isNullOrBlank() -> title.trim()
+            !text.isNullOrBlank() -> text.trim()
+            else -> null
+        } ?: return null
+        return "${appPackage.lowercase()}|${label.lowercase()}"
     }
     
     private fun calculateFileChecksum(file: java.io.File): String {

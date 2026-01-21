@@ -24,6 +24,7 @@ data class NotificationData(
     val timestamp: Long = System.currentTimeMillis(),
     val mediaUrls: List<String>? = null,
     val serverMediaUrls: List<String>? = null,
+    val iconUrl: String? = null,
     val synced: Boolean = false,
     val syncAttempts: Int = 0,
     val lastSyncAttempt: Long? = null,

@@ -11,6 +11,7 @@ data class Notification(
     val text: String?,
     val timestamp: Long,
     @SerializedName("mediaUrls") val mediaUrls: List<String>?,
+    @SerializedName("iconUrl") val iconUrl: String?,
     val synced: Boolean,
     val createdAt: Long?
 )

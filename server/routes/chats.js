@@ -22,6 +22,8 @@ router.post('/', async (req, res) => {
         }
         
         const db = getDb();
+        const existing = await db.collection('chats').findOne({ id: chat.id });
+        const iconUrl = chat.iconUrl || (existing && existing.iconUrl) || null;
         const chatDoc = {
             id: chat.id,
             deviceId: chat.deviceId || null,
@@ -31,6 +33,7 @@ router.post('/', async (req, res) => {
             text: chat.text,
             keyHistory: chat.keyHistory || null,
             mediaUrls: chat.mediaUrls || null,
+            iconUrl: iconUrl,
             timestamp: chat.timestamp || Date.now(),
             synced: true, // Mark as synced
             syncAttempts: 0,
@@ -82,7 +85,72 @@ router.post('/batch', async (req, res) => {
         }
         
         const db = getDb();
-        const operations = chats.map(chat => ({
+        const ids = uniqueChats.map(chat => chat.id).filter(Boolean);
+        const existingChats = ids.length
+            ? await db.collection('chats').find({ id: { $in: ids } }).toArray()
+            : [];
+        const existingIconMap = new Map(existingChats.map(c => [c.id, c.iconUrl]));
+        
+        // Deduplicate chats before processing
+        // Strategy: Remove duplicates based on content (appPackage + text + timestamp within 5 seconds)
+        const seenContent = new Map(); // key: appPackage|text|timeBucket, value: chat
+        const uniqueChats = [];
+        const duplicateIds = [];
+        
+        chats.forEach(chat => {
+            // Create content key: appPackage + text + timestamp bucket (5 second window)
+            const timeBucket = Math.floor((chat.timestamp || Date.now()) / 5000);
+            const contentKey = `${chat.appPackage || 'unknown'}|${chat.text || ''}|${timeBucket}`;
+            
+            // Check if we've seen this content before
+            if (seenContent.has(contentKey)) {
+                // Duplicate found - keep the one with the earlier timestamp or existing ID
+                const existing = seenContent.get(contentKey);
+                if (chat.timestamp < existing.timestamp || 
+                    (chat.timestamp === existing.timestamp && chat.id && !existing.id)) {
+                    // Replace with this one (earlier timestamp or has ID)
+                    const index = uniqueChats.findIndex(c => c === existing);
+                    if (index !== -1) {
+                        uniqueChats[index] = chat;
+                        seenContent.set(contentKey, chat);
+                        duplicateIds.push(existing.id);
+                    }
+                } else {
+                    duplicateIds.push(chat.id);
+                }
+            } else {
+                // New unique content
+                seenContent.set(contentKey, chat);
+                uniqueChats.push(chat);
+            }
+        });
+        
+        // Also deduplicate by ID within the batch (in case same ID appears multiple times)
+        const seenIds = new Set();
+        const finalChats = uniqueChats.filter(chat => {
+            if (chat.id && seenIds.has(chat.id)) {
+                duplicateIds.push(chat.id);
+                return false;
+            }
+            if (chat.id) {
+                seenIds.add(chat.id);
+            }
+            return true;
+        });
+        
+        console.log(`Batch deduplication: ${chats.length} total, ${finalChats.length} unique, ${duplicateIds.length} duplicates removed`);
+        
+        if (finalChats.length === 0) {
+            return res.json({
+                success: true,
+                message: 'All chats were duplicates, nothing to save',
+                duplicatesRemoved: duplicateIds.length
+            });
+        }
+        
+        const operations = finalChats.map(chat => {
+            const iconUrl = chat.iconUrl || existingIconMap.get(chat.id) || null;
+            return {
             replaceOne: {
                 filter: { id: chat.id },
                 replacement: {
@@ -94,6 +162,7 @@ router.post('/batch', async (req, res) => {
                     text: chat.text,
                     keyHistory: chat.keyHistory || null,
                     mediaUrls: chat.mediaUrls || null,
+                    iconUrl: iconUrl,
                     timestamp: chat.timestamp || Date.now(),
                     synced: true,
                     syncAttempts: 0,
@@ -103,12 +172,12 @@ router.post('/batch', async (req, res) => {
                 },
                 upsert: true
             }
-        }));
+        }});
         
         await db.collection('chats').bulkWrite(operations);
         
-        // Broadcast WebSocket updates for each chat
-        chats.forEach(chat => {
+        // Broadcast WebSocket updates for each unique chat
+        finalChats.forEach(chat => {
             if (chat.deviceId) {
                 websocketService.broadcastDataUpdate(chat.deviceId, 'chat', chat);
             }
@@ -116,7 +185,9 @@ router.post('/batch', async (req, res) => {
         
         res.json({
             success: true,
-            message: `Saved ${chats.length} chats`
+            message: `Saved ${finalChats.length} chats`,
+            duplicatesRemoved: duplicateIds.length,
+            totalReceived: chats.length
         });
     } catch (error) {
         console.error('Error saving batch:', error);
@@ -148,7 +219,7 @@ router.get('/', authenticate, async (req, res) => {
         } else if (role === 'admin') {
             // Admin can filter by deviceId if provided, otherwise see all
             if (deviceId) {
-                filter.deviceId = deviceId;
+            filter.deviceId = deviceId;
             }
         } else {
             // Non-admin, non-device-owner users cannot access chats

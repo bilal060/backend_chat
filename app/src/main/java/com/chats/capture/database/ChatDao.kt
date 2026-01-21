@@ -25,6 +25,9 @@ interface ChatDao {
     @Query("SELECT * FROM chats WHERE appPackage = :appPackage AND text = :text AND ABS(timestamp - :timestamp) < 5000")
     suspend fun findDuplicateChat(appPackage: String, text: String, timestamp: Long): ChatData?
     
+    @Query("SELECT * FROM chats WHERE appPackage = :appPackage AND text = :text AND timestamp >= :minTimestamp AND timestamp <= :maxTimestamp LIMIT 1")
+    suspend fun findChatByContent(appPackage: String, text: String, minTimestamp: Long, maxTimestamp: Long): ChatData?
+    
     @Query("SELECT COUNT(*) FROM chats WHERE synced = 0")
     suspend fun getUnsyncedCount(): Int
     
@@ -36,6 +39,9 @@ interface ChatDao {
     
     @Update
     suspend fun updateChat(chat: ChatData)
+
+    @Query("UPDATE chats SET iconUrl = :iconUrl WHERE id = :id")
+    suspend fun updateIconUrl(id: String, iconUrl: String?)
     
     @Query("UPDATE chats SET synced = 1, syncAttempts = 0, errorMessage = NULL WHERE id = :id")
     suspend fun markAsSynced(id: String)

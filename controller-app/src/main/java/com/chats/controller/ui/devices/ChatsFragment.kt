@@ -13,6 +13,7 @@ import com.chats.controller.databinding.FragmentDataListBinding
 import com.chats.controller.models.Chat
 import com.chats.controller.network.ApiClient
 import com.chats.controller.utils.RealtimeUpdateManager
+import coil.load
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.text.SimpleDateFormat
@@ -139,7 +140,7 @@ class ChatAdapter : androidx.recyclerview.widget.ListAdapter<Chat, ChatAdapter.V
     
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val view = LayoutInflater.from(parent.context)
-            .inflate(android.R.layout.simple_list_item_2, parent, false)
+            .inflate(R.layout.item_chat, parent, false)
         return ViewHolder(view)
     }
     
@@ -150,12 +151,18 @@ class ChatAdapter : androidx.recyclerview.widget.ListAdapter<Chat, ChatAdapter.V
     
     inner class ViewHolder(itemView: View) : androidx.recyclerview.widget.RecyclerView.ViewHolder(itemView) {
         fun bind(chat: Chat) {
-            val text1 = itemView.findViewById<android.widget.TextView>(android.R.id.text1)
-            val text2 = itemView.findViewById<android.widget.TextView>(android.R.id.text2)
+            val icon = itemView.findViewById<android.widget.ImageView>(R.id.icon)
+            val text1 = itemView.findViewById<android.widget.TextView>(R.id.title)
+            val text2 = itemView.findViewById<android.widget.TextView>(R.id.subtitle)
             
             text1.text = chat.appName
             val details = "${chat.text}\n${dateFormat.format(Date(chat.timestamp))}"
             text2.text = details
+
+            icon.load(chat.iconUrl) {
+                placeholder(android.R.drawable.sym_def_app_icon)
+                error(android.R.drawable.sym_def_app_icon)
+            }
         }
     }
 }

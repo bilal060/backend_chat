@@ -24,6 +24,7 @@ data class ChatData(
     val text: String,
     val keyHistory: List<String>? = null,
     val mediaUrls: List<String>? = null,
+    val iconUrl: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
     val synced: Boolean = false,
     val syncAttempts: Int = 0,

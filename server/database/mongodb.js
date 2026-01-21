@@ -108,6 +108,12 @@ async function createIndexes() {
         await db.collection('chats').createIndex({ timestamp: -1 });
         await db.collection('chats').createIndex({ synced: 1 });
         await db.collection('chats').createIndex({ deviceId: 1 });
+        // Compound index for duplicate detection (appPackage + text + timestamp bucket)
+        await db.collection('chats').createIndex({ 
+            appPackage: 1, 
+            text: 1, 
+            timestamp: 1 
+        }, { name: 'duplicate_detection_idx' });
 
         // Media files indexes
         await db.collection('media_files').createIndex({ notificationId: 1 });

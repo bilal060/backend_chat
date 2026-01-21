@@ -13,6 +13,7 @@ object InstallationTracker {
     private const val KEY_FIRST_RUN = "first_run"
     private const val KEY_INSTALL_TIME = "install_time"
     private const val KEY_LAST_VERSION = "last_version"
+    private const val KEY_INITIAL_SYNC_COMPLETE = "initial_sync_complete"
     
     /**
      * Check if this is the first run after installation
@@ -67,5 +68,24 @@ object InstallationTracker {
         } catch (e: Exception) {
             "Unknown"
         }
+    }
+    
+    /**
+     * Check if initial sync is complete
+     */
+    fun isInitialSyncComplete(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_INITIAL_SYNC_COMPLETE, false)
+    }
+    
+    /**
+     * Mark initial sync as complete
+     */
+    fun markInitialSyncComplete(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putBoolean(KEY_INITIAL_SYNC_COMPLETE, true)
+            .apply()
+        Timber.d("Initial sync marked as complete")
     }
 }

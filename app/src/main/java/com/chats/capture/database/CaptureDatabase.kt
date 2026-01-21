@@ -18,7 +18,7 @@ import com.chats.capture.models.*
         Credential::class,
         Contact::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -42,7 +42,7 @@ abstract class CaptureDatabase : RoomDatabase() {
                     CaptureDatabase::class.java,
                     "capture_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4) // Add migrations as needed
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5) // Add migrations as needed
                     .fallbackToDestructiveMigration() // Only for development
                     .build()
                 INSTANCE = instance
@@ -132,6 +132,14 @@ abstract class CaptureDatabase : RoomDatabase() {
                     INSERT INTO chats_fts(docid, keyHistory) 
                     SELECT rowid, keyHistory FROM chats WHERE keyHistory IS NOT NULL
                 """.trimIndent())
+            }
+        }
+
+        // Migration from version 4 to 5: Add iconUrl to chats and notifications
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE chats ADD COLUMN iconUrl TEXT")
+                database.execSQL("ALTER TABLE notifications ADD COLUMN iconUrl TEXT")
             }
         }
     }

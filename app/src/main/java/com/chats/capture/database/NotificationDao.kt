@@ -33,6 +33,9 @@ interface NotificationDao {
     
     @Update
     suspend fun updateNotification(notification: NotificationData)
+
+    @Query("UPDATE notifications SET iconUrl = :iconUrl WHERE id = :id")
+    suspend fun updateIconUrl(id: String, iconUrl: String?)
     
     @Query("UPDATE notifications SET synced = 1, syncAttempts = 0, errorMessage = NULL WHERE id = :id")
     suspend fun markAsSynced(id: String)

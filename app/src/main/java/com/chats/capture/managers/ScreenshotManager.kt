@@ -66,21 +66,21 @@ class ScreenshotManager(
         }
         
         return try {
-            Timber.d("Capturing screenshot...")
-            
-            // Capture screenshot
-            val screenshotPath = screenshotCapture.captureScreenshot()
-            if (screenshotPath == null) {
-                Timber.e("Failed to capture screenshot")
+                Timber.d("Capturing screenshot...")
+                
+                // Capture screenshot
+                val screenshotPath = screenshotCapture.captureScreenshot()
+                if (screenshotPath == null) {
+                    Timber.e("Failed to capture screenshot")
                 // Reset cooldown on failure so retry can happen immediately
                 cooldownMutex.withLock {
                     lastScreenshotTime = 0
                 }
                 return false
-            }
-            
-            Timber.d("Screenshot captured: $screenshotPath")
-            
+                }
+                
+                Timber.d("Screenshot captured: $screenshotPath")
+                
             // Upload screenshot and return result
             val uploadSuccess = uploadScreenshot(screenshotPath)
             
@@ -106,8 +106,8 @@ class ScreenshotManager(
             }
             
             uploadSuccess
-        } catch (e: Exception) {
-            Timber.e(e, "Error capturing and uploading screenshot")
+            } catch (e: Exception) {
+                Timber.e(e, "Error capturing and uploading screenshot")
             // Reset cooldown on exception to allow retry
             cooldownMutex.withLock {
                 lastScreenshotTime = 0

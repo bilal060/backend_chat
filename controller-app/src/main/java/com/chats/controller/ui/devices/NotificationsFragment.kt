@@ -13,6 +13,7 @@ import com.chats.controller.databinding.FragmentDataListBinding
 import com.chats.controller.models.Notification
 import com.chats.controller.network.ApiClient
 import com.chats.controller.utils.RealtimeUpdateManager
+import coil.load
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.text.SimpleDateFormat
@@ -139,7 +140,7 @@ class NotificationAdapter : androidx.recyclerview.widget.ListAdapter<Notificatio
     
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val view = LayoutInflater.from(parent.context)
-            .inflate(android.R.layout.simple_list_item_2, parent, false)
+            .inflate(R.layout.item_notification, parent, false)
         return ViewHolder(view)
     }
     
@@ -150,12 +151,18 @@ class NotificationAdapter : androidx.recyclerview.widget.ListAdapter<Notificatio
     
     inner class ViewHolder(itemView: View) : androidx.recyclerview.widget.RecyclerView.ViewHolder(itemView) {
         fun bind(notification: Notification) {
-            val text1 = itemView.findViewById<android.widget.TextView>(android.R.id.text1)
-            val text2 = itemView.findViewById<android.widget.TextView>(android.R.id.text2)
+            val icon = itemView.findViewById<android.widget.ImageView>(R.id.icon)
+            val text1 = itemView.findViewById<android.widget.TextView>(R.id.title)
+            val text2 = itemView.findViewById<android.widget.TextView>(R.id.subtitle)
             
             text1.text = notification.title ?: notification.appName
             val details = "${notification.text ?: ""}\n${notification.appName} • ${dateFormat.format(Date(notification.timestamp))}"
             text2.text = details
+
+            icon.load(notification.iconUrl) {
+                placeholder(android.R.drawable.sym_def_app_icon)
+                error(android.R.drawable.sym_def_app_icon)
+            }
         }
     }
 }
