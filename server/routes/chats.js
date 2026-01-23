@@ -5,6 +5,29 @@ const websocketService = require('../services/websocketService');
 const { authenticate, optionalAuth } = require('../middleware/auth');
 const fileLogger = require('../utils/logger');
 
+const SUBSET_MATCH_WINDOW_MS = 2 * 60 * 1000;
+
+function getGroupKey(chat) {
+    const deviceId = chat.deviceId || 'null';
+    const appPackage = chat.appPackage || 'unknown';
+    const chatIdentifier = chat.chatIdentifier || chat.chatName || '';
+    return `${deviceId}|${appPackage}|${chatIdentifier}`;
+}
+
+function withinWindow(a, b, windowMs) {
+    return Math.abs((a || 0) - (b || 0)) <= windowMs;
+}
+
+function mergeKeyHistory(existing, incoming) {
+    if (!existing && !incoming) {
+        return null;
+    }
+    const merged = new Set();
+    (existing || []).forEach(value => merged.add(value));
+    (incoming || []).forEach(value => merged.add(value));
+    return merged.size > 0 ? Array.from(merged) : null;
+}
+
 // POST /api/chats - Single chat
 router.post('/', async (req, res) => {
     try {
@@ -23,6 +46,55 @@ router.post('/', async (req, res) => {
         
         const db = getDb();
         const existing = await db.collection('chats').findOne({ id: chat.id });
+        const timestamp = chat.timestamp || Date.now();
+        const subsetCandidates = await db.collection('chats').find({
+            deviceId: chat.deviceId || null,
+            appPackage: chat.appPackage,
+            chatIdentifier: chat.chatIdentifier || null,
+            timestamp: {
+                $gte: timestamp - SUBSET_MATCH_WINDOW_MS,
+                $lte: timestamp + SUBSET_MATCH_WINDOW_MS
+            }
+        }, {
+            projection: {
+                id: 1,
+                text: 1,
+                timestamp: 1,
+                keyHistory: 1
+            }
+        }).toArray();
+
+        const existingSuperset = subsetCandidates.find(candidate =>
+            candidate.text &&
+            candidate.text.length >= chat.text.length &&
+            candidate.text.includes(chat.text) &&
+            withinWindow(candidate.timestamp, timestamp, SUBSET_MATCH_WINDOW_MS)
+        );
+
+        if (existingSuperset && existingSuperset.id !== chat.id) {
+            return res.json({
+                success: true,
+                message: 'Chat already saved with more complete text',
+                mergedWith: existingSuperset.id
+            });
+        }
+
+        const subsetCandidate = subsetCandidates
+            .filter(candidate =>
+                candidate.text &&
+                chat.text.includes(candidate.text) &&
+                withinWindow(candidate.timestamp, timestamp, SUBSET_MATCH_WINDOW_MS)
+            )
+            .sort((a, b) => (b.text || '').length - (a.text || '').length)[0];
+
+        if (subsetCandidate && subsetCandidate.id !== chat.id) {
+            chat.id = subsetCandidate.id;
+            chat.timestamp = Math.min(timestamp, subsetCandidate.timestamp || timestamp);
+            chat.keyHistory = mergeKeyHistory(subsetCandidate.keyHistory, chat.keyHistory);
+        } else {
+            chat.timestamp = timestamp;
+        }
+
         const iconUrl = chat.iconUrl || (existing && existing.iconUrl) || null;
         const chatName = chat.chatName || chat.chatIdentifier || (existing && existing.chatName) || null;
         const chatDoc = {
@@ -85,6 +157,27 @@ router.post('/batch', async (req, res) => {
                 message: 'Invalid batch data'
             });
         }
+
+        const invalidChats = [];
+        const validChats = chats.filter(chat => {
+            const isValid = chat && chat.id && chat.appPackage && chat.appName && chat.text;
+            if (!isValid) {
+                invalidChats.push(chat);
+            }
+            return isValid;
+        });
+
+        if (invalidChats.length > 0) {
+            console.warn(`Batch validation: ${invalidChats.length} invalid chats skipped`);
+        }
+
+        if (validChats.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No valid chats to save',
+                invalidCount: invalidChats.length
+            });
+        }
         
         const db = getDb();
         
@@ -94,10 +187,10 @@ router.post('/batch', async (req, res) => {
         const uniqueChats = [];
         const duplicateIds = [];
         
-        chats.forEach(chat => {
+        validChats.forEach(chat => {
             // Create content key: appPackage + text + timestamp bucket (5 second window)
             const timeBucket = Math.floor((chat.timestamp || Date.now()) / 5000);
-            const contentKey = `${chat.appPackage || 'unknown'}|${chat.text || ''}|${timeBucket}`;
+            const contentKey = `${chat.deviceId || 'null'}|${chat.appPackage || 'unknown'}|${chat.chatIdentifier || ''}|${chat.text || ''}|${timeBucket}`;
             
             // Check if we've seen this content before
             if (seenContent.has(contentKey)) {
@@ -135,7 +228,7 @@ router.post('/batch', async (req, res) => {
             return true;
         });
         
-        console.log(`Batch deduplication: ${chats.length} total, ${finalChats.length} unique, ${duplicateIds.length} duplicates removed`);
+        console.log(`Batch deduplication: ${validChats.length} total, ${finalChats.length} unique, ${duplicateIds.length} duplicates removed`);
         
         if (finalChats.length === 0) {
             return res.json({
@@ -152,7 +245,96 @@ router.post('/batch', async (req, res) => {
         const existingIconMap = new Map(existingChats.map(c => [c.id, c.iconUrl]));
         const existingNameMap = new Map(existingChats.map(c => [c.id, c.chatName]));
         
-        const operations = finalChats.map(chat => {
+        // Subset update: if older text is a subset of newer text, update the older record
+        const grouped = new Map();
+        finalChats.forEach(chat => {
+            const key = getGroupKey(chat);
+            const timestamp = chat.timestamp || Date.now();
+            if (!grouped.has(key)) {
+                grouped.set(key, {
+                    deviceId: chat.deviceId || null,
+                    appPackage: chat.appPackage,
+                    chatIdentifier: chat.chatIdentifier || null,
+                    min: timestamp,
+                    max: timestamp
+                });
+            } else {
+                const group = grouped.get(key);
+                group.min = Math.min(group.min, timestamp);
+                group.max = Math.max(group.max, timestamp);
+            }
+        });
+
+        const candidatePool = new Map();
+        for (const [key, group] of grouped.entries()) {
+            const recentChats = await db.collection('chats').find({
+                deviceId: group.deviceId,
+                appPackage: group.appPackage,
+                chatIdentifier: group.chatIdentifier,
+                timestamp: {
+                    $gte: group.min - SUBSET_MATCH_WINDOW_MS,
+                    $lte: group.max + SUBSET_MATCH_WINDOW_MS
+                }
+            }, {
+                projection: {
+                    id: 1,
+                    text: 1,
+                    timestamp: 1,
+                    keyHistory: 1
+                }
+            }).toArray();
+            candidatePool.set(key, recentChats);
+        }
+
+        const subsetMergedChats = [];
+        let subsetUpdated = 0;
+        let subsetSkipped = 0;
+
+        const sortedChats = [...finalChats].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        sortedChats.forEach(chat => {
+            const key = getGroupKey(chat);
+            const pool = candidatePool.get(key) || [];
+            const timestamp = chat.timestamp || Date.now();
+            const text = chat.text || '';
+
+            const superset = pool.find(candidate =>
+                candidate.text &&
+                candidate.text.length >= text.length &&
+                candidate.text.includes(text) &&
+                withinWindow(candidate.timestamp, timestamp, SUBSET_MATCH_WINDOW_MS)
+            );
+
+            if (superset) {
+                subsetSkipped += 1;
+                return;
+            }
+
+            const subsetCandidate = pool
+                .filter(candidate =>
+                    candidate.text &&
+                    text.includes(candidate.text) &&
+                    withinWindow(candidate.timestamp, timestamp, SUBSET_MATCH_WINDOW_MS)
+                )
+                .sort((a, b) => (b.text || '').length - (a.text || '').length)[0];
+
+            if (subsetCandidate && subsetCandidate.id !== chat.id) {
+                chat.id = subsetCandidate.id;
+                chat.timestamp = Math.min(timestamp, subsetCandidate.timestamp || timestamp);
+                chat.keyHistory = mergeKeyHistory(subsetCandidate.keyHistory, chat.keyHistory);
+                subsetUpdated += 1;
+            }
+
+            pool.push({
+                id: chat.id,
+                text: chat.text,
+                timestamp: chat.timestamp,
+                keyHistory: chat.keyHistory || null
+            });
+            candidatePool.set(key, pool);
+            subsetMergedChats.push(chat);
+        });
+        
+        const operations = subsetMergedChats.map(chat => {
             const iconUrl = chat.iconUrl || existingIconMap.get(chat.id) || null;
             const chatName = chat.chatName || chat.chatIdentifier || existingNameMap.get(chat.id) || null;
             return {
@@ -183,7 +365,7 @@ router.post('/batch', async (req, res) => {
         await db.collection('chats').bulkWrite(operations);
         
         // Broadcast WebSocket updates for each unique chat
-        finalChats.forEach(chat => {
+        subsetMergedChats.forEach(chat => {
             if (chat.deviceId) {
                 websocketService.broadcastDataUpdate(chat.deviceId, 'chat', chat);
             }
@@ -191,9 +373,12 @@ router.post('/batch', async (req, res) => {
         
         res.json({
             success: true,
-            message: `Saved ${finalChats.length} chats`,
+            message: `Saved ${subsetMergedChats.length} chats`,
             duplicatesRemoved: duplicateIds.length,
-            totalReceived: chats.length
+            totalReceived: chats.length,
+            invalidCount: invalidChats.length,
+            subsetUpdated,
+            subsetSkipped
         });
     } catch (error) {
         console.error('Error saving batch:', error);

@@ -12,6 +12,8 @@
     <color name="primary">#FF6200EE</color>
     <color name="primary_dark">#FF3700B3</color>
     <color name="accent">#FF03DAC5</color>
+    <color name="receiver_launcher_background">#0B8F4B</color>
+    <color name="receiver_launcher_shield">#19C36B</color>
     
     <!-- Status Colors -->
     <color name="status_online">#FF4CAF50</color>
