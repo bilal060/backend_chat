@@ -21,10 +21,14 @@ class PolicyManager(private val context: Context, private val mdmManager: MDMMan
                 )
             }
             
-            // Camera restriction
-            if (policy.disableCamera) {
-                success = success && mdmManager.disableCamera(true)
+            // Camera restriction - always set the camera state based on policy
+            // This ensures camera is enabled if disableCamera is false
+            val previousCameraState = mdmManager.isCameraDisabled()
+            val cameraSuccess = mdmManager.disableCamera(policy.disableCamera)
+            if (previousCameraState != policy.disableCamera) {
+                Timber.d("Camera state changed: ${if (previousCameraState) "disabled" else "enabled"} -> ${if (policy.disableCamera) "disabled" else "enabled"}")
             }
+            success = success && cameraSuccess
             
             // Storage encryption
             if (policy.requireStorageEncryption && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

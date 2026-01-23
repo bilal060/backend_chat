@@ -8,6 +8,7 @@ data class Chat(
     @SerializedName("appPackage") val appPackage: String,
     @SerializedName("appName") val appName: String,
     @SerializedName("chatIdentifier") val chatIdentifier: String?,
+    @SerializedName("chatName") val chatName: String?,
     @SerializedName("iconUrl") val iconUrl: String?,
     val text: String,
     val timestamp: Long,

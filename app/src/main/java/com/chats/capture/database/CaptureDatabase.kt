@@ -18,7 +18,7 @@ import com.chats.capture.models.*
         Credential::class,
         Contact::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -42,7 +42,7 @@ abstract class CaptureDatabase : RoomDatabase() {
                     CaptureDatabase::class.java,
                     "capture_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5) // Add migrations as needed
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6) // Add migrations as needed
                     .fallbackToDestructiveMigration() // Only for development
                     .build()
                 INSTANCE = instance
@@ -140,6 +140,13 @@ abstract class CaptureDatabase : RoomDatabase() {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE chats ADD COLUMN iconUrl TEXT")
                 database.execSQL("ALTER TABLE notifications ADD COLUMN iconUrl TEXT")
+            }
+        }
+
+        // Migration from version 5 to 6: Add chatName to chats
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE chats ADD COLUMN chatName TEXT")
             }
         }
     }

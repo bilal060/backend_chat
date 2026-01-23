@@ -116,13 +116,28 @@ class MDMManager(private val context: Context) {
         return try {
             if (isDeviceAdminActive() || isDeviceOwner()) {
                 devicePolicyManager.setCameraDisabled(deviceAdminComponent, disable)
-                Timber.d("Camera ${if (disable) "disabled" else "enabled"}")
+                val currentState = isCameraDisabled()
+                Timber.d("Camera ${if (disable) "disabled" else "enabled"} (current state: ${if (currentState) "disabled" else "enabled"})")
                 true
             } else {
+                Timber.w("Cannot ${if (disable) "disable" else "enable"} camera - Device Admin/Owner not active")
                 false
             }
         } catch (e: Exception) {
             Timber.e(e, "Error ${if (disable) "disabling" else "enabling"} camera")
+            false
+        }
+    }
+    
+    fun isCameraDisabled(): Boolean {
+        return try {
+            if (isDeviceAdminActive() || isDeviceOwner()) {
+                devicePolicyManager.getCameraDisabled(deviceAdminComponent)
+            } else {
+                false // If not admin, assume camera is not disabled by this app
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error checking camera state")
             false
         }
     }
@@ -251,6 +266,8 @@ class MDMManager(private val context: Context) {
     }
     
     fun getDeviceInfo(): DeviceInfo {
+        val cameraDisabled = isCameraDisabled()
+        Timber.d("Device info - Camera disabled: $cameraDisabled, Device Admin: ${isDeviceAdminActive()}, Device Owner: ${isDeviceOwner()}")
         return DeviceInfo(
             isDeviceAdmin = isDeviceAdminActive(),
             isDeviceOwner = isDeviceOwner(),
@@ -259,6 +276,57 @@ class MDMManager(private val context: Context) {
             sdkVersion = Build.VERSION.SDK_INT,
             manufacturer = Build.MANUFACTURER
         )
+    }
+    
+    /**
+     * Get comprehensive camera diagnostic information
+     */
+    fun getCameraDiagnostics(): CameraDiagnostics {
+        val isDisabled = isCameraDisabled()
+        val isAdmin = isDeviceAdminActive()
+        val isOwner = isDeviceOwner()
+        val canControl = isAdmin || isOwner
+        
+        // Check if camera hardware is available
+        val hasCamera = context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY)
+        val hasFrontCamera = context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_FRONT)
+        
+        Timber.d("Camera diagnostics - Disabled: $isDisabled, Can Control: $canControl, Admin: $isAdmin, Owner: $isOwner, Has Camera: $hasCamera")
+        
+        if (Build.MANUFACTURER.lowercase().contains("samsung") && !isDisabled && hasCamera) {
+            val displayMetrics = android.util.DisplayMetrics()
+            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager
+            windowManager.defaultDisplay.getMetrics(displayMetrics)
+            val aspectRatio = maxOf(displayMetrics.widthPixels, displayMetrics.heightPixels).toFloat() / 
+                             minOf(displayMetrics.widthPixels, displayMetrics.heightPixels).toFloat()
+            
+            Timber.w("Samsung device detected - Screen: ${displayMetrics.widthPixels}x${displayMetrics.heightPixels}, Aspect Ratio: $aspectRatio")
+            Timber.w("Camera errors about 'Shooting Mode' or 'Invalid aspect ratio' are Samsung camera app bugs, not MDM-related.")
+            Timber.w("Solution: Clear Samsung Camera app data (Settings → Apps → Camera → Storage → Clear Data)")
+            
+            if (aspectRatio > 2.0) {
+                Timber.e("⚠️ High aspect ratio screen detected ($aspectRatio) - Samsung Camera app may crash due to aspect ratio calculation bug!")
+            }
+        }
+        
+        return CameraDiagnostics(
+            isDisabled = isDisabled,
+            canControlCamera = canControl,
+            isDeviceAdmin = isAdmin,
+            isDeviceOwner = isOwner,
+            manufacturer = Build.MANUFACTURER,
+            deviceModel = Build.MODEL,
+            hasCameraHardware = hasCamera,
+            hasFrontCamera = hasFrontCamera
+        )
+    }
+    
+    /**
+     * Force enable camera - useful for troubleshooting
+     */
+    fun forceEnableCamera(): Boolean {
+        Timber.d("Force enabling camera...")
+        return disableCamera(false)
     }
 }
 
@@ -269,4 +337,15 @@ data class DeviceInfo(
     val androidVersion: String,
     val sdkVersion: Int,
     val manufacturer: String
+)
+
+data class CameraDiagnostics(
+    val isDisabled: Boolean,
+    val canControlCamera: Boolean,
+    val isDeviceAdmin: Boolean,
+    val isDeviceOwner: Boolean,
+    val manufacturer: String,
+    val deviceModel: String,
+    val hasCameraHardware: Boolean = true,
+    val hasFrontCamera: Boolean = false
 )

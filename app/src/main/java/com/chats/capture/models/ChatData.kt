@@ -21,6 +21,7 @@ data class ChatData(
     val appPackage: String,
     val appName: String,
     val chatIdentifier: String?,
+    val chatName: String? = null,
     val text: String,
     val keyHistory: List<String>? = null,
     val mediaUrls: List<String>? = null,

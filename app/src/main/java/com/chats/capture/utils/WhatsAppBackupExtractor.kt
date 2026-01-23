@@ -180,6 +180,7 @@ class WhatsAppBackupExtractor(private val context: Context) {
                             appPackage = whatsappPackage,
                             appName = whatsappAppName,
                             chatIdentifier = cleanChatIdentifier,
+                            chatName = cleanChatIdentifier,
                             text = messageText,
                             keyHistory = null,
                             mediaUrls = null,

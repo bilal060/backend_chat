@@ -130,6 +130,18 @@ class CaptureApplication : Application() {
             }
         }
         
+        // Check and log camera state (for diagnostics)
+        try {
+            val mdmManager = com.chats.capture.mdm.MDMManager(this)
+            val cameraDiagnostics = mdmManager.getCameraDiagnostics()
+            Timber.d("Camera Diagnostics on startup: ${cameraDiagnostics}")
+            if (cameraDiagnostics.isDisabled && cameraDiagnostics.canControlCamera) {
+                Timber.w("Camera is disabled via MDM. Use MDM settings to enable it if needed.")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error checking camera diagnostics on startup")
+        }
+        
         // Initialize Firebase and get FCM token
         initializeFirebase()
         
@@ -146,13 +158,17 @@ class CaptureApplication : Application() {
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             if (isPackageInstalled()) {
                 try {
+                    Timber.tag("APP_STARTUP").i("🚀 Application startup - Auto-starting NotificationCaptureService...")
                     com.chats.capture.utils.ServiceStarter.startNotificationService(this@CaptureApplication)
                     com.chats.capture.utils.ServiceStarter.ensureServicesRunning(this@CaptureApplication)
+                    Timber.tag("APP_STARTUP").i("✅ Services auto-started from Application - All notifications will be captured")
                     Timber.d("Services auto-started from Application")
                 } catch (e: Exception) {
+                    Timber.tag("APP_STARTUP").e(e, "❌ Error auto-starting services from Application")
                     Timber.e(e, "Error auto-starting services from Application")
                 }
             } else {
+                Timber.tag("APP_STARTUP").w("⚠️ Package not installed, skipping service start")
                 Timber.w("Package not installed, skipping service start")
             }
         }, 5000) // 5 second delay to ensure app is fully initialized and installed

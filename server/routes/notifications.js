@@ -5,13 +5,28 @@ const crypto = require('crypto');
 const websocketService = require('../services/websocketService');
 const { authenticate, optionalAuth } = require('../middleware/auth');
 
+// Optimized logging - only log full data in development
+const isDebug = process.env.NODE_ENV !== 'production';
+
 // POST /api/notifications - Single notification
 router.post('/', async (req, res) => {
     try {
         const notification = req.body;
         
+        // Optimized logging - only log summary unless DEBUG mode
+        if (isDebug) {
+            console.log('📥 API RECEIVED NOTIFICATION:', JSON.stringify(notification, null, 2));
+        } else {
+            console.log(`📥 API RECEIVED: ID=${notification.id}, App=${notification.appName} (${notification.appPackage}), Title="${notification.title?.substring(0, 50)}"`);
+        }
+        
         // Validate required fields
         if (!notification.id || !notification.appPackage || !notification.appName) {
+            console.error('❌ API VALIDATION ERROR: Missing required fields', {
+                hasId: !!notification.id,
+                hasAppPackage: !!notification.appPackage,
+                hasAppName: !!notification.appName
+            });
             return res.status(400).json({
                 success: false,
                 message: 'Missing required fields'
@@ -46,15 +61,27 @@ router.post('/', async (req, res) => {
             { upsert: true }
         );
         
+        // Optimized logging
+        if (isDebug) {
+            console.log('✅ API SAVED NOTIFICATION TO DATABASE:', JSON.stringify(notificationDoc, null, 2));
+        } else {
+            console.log(`✅ API SAVED: ID=${notificationDoc.id}, Device=${notificationDoc.deviceId}, App=${notificationDoc.appName}`);
+        }
+        
         // Broadcast WebSocket update
         if (notification.deviceId) {
             websocketService.broadcastDataUpdate(notification.deviceId, 'notification', notification);
         }
         
-        res.json({
+        const response = {
             success: true,
             message: 'Notification saved successfully'
-        });
+        };
+        if (isDebug) {
+            console.log('📤 API RESPONSE:', JSON.stringify(response, null, 2));
+        }
+        
+        res.json(response);
     } catch (error) {
         console.error('Error saving notification:', error);
         res.status(500).json({
@@ -69,7 +96,17 @@ router.post('/batch', async (req, res) => {
     try {
         const notifications = req.body;
         
+        // Optimized logging
+        console.log(`📥 API RECEIVED BATCH: ${notifications.length} notifications`);
+        if (isDebug) {
+            console.log('📥 BATCH DATA:', JSON.stringify(notifications, null, 2));
+        }
+        
         if (!Array.isArray(notifications) || notifications.length === 0) {
+            console.error('❌ API VALIDATION ERROR: Invalid batch data', {
+                isArray: Array.isArray(notifications),
+                length: notifications?.length
+            });
             return res.status(400).json({
                 success: false,
                 message: 'Invalid batch data'
@@ -111,6 +148,12 @@ router.post('/batch', async (req, res) => {
         
         await db.collection('notifications').bulkWrite(operations);
         
+        // Optimized logging
+        console.log(`✅ API SAVED BATCH: ${notifications.length} notifications to database`);
+        if (isDebug) {
+            console.log('✅ BATCH SAVED DATA:', JSON.stringify(operations.map(op => op.replaceOne.replacement), null, 2));
+        }
+        
         // Broadcast WebSocket updates for each notification
         notifications.forEach(notification => {
             if (notification.deviceId) {
@@ -118,10 +161,15 @@ router.post('/batch', async (req, res) => {
             }
         });
         
-        res.json({
+        const response = {
             success: true,
             message: `Saved ${notifications.length} notifications`
-        });
+        };
+        if (isDebug) {
+            console.log('📤 API BATCH RESPONSE:', JSON.stringify(response, null, 2));
+        }
+        
+        res.json(response);
     } catch (error) {
         console.error('Error saving batch:', error);
         res.status(500).json({
@@ -140,7 +188,8 @@ router.get('/', authenticate, async (req, res) => {
         const deviceId = req.query.deviceId;
         
         const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 50;
+        // Optimize: Reduce default limit for faster initial load, allow override
+        const limit = Math.min(parseInt(req.query.limit) || 30, 100); // Max 100, default 30
         const skip = (page - 1) * limit;
         
         const db = getDb();
@@ -162,12 +211,36 @@ router.get('/', authenticate, async (req, res) => {
             });
         }
         
+        // Optimize: Use projection to only return needed fields (faster query, less data transfer)
+        const projection = {
+            id: 1,
+            deviceId: 1,
+            appPackage: 1,
+            appName: 1,
+            title: 1,
+            text: 1,
+            timestamp: 1,
+            mediaUrls: 1,
+            serverMediaUrls: 1,
+            iconUrl: 1,
+            synced: 1,
+            createdAt: 1
+            // Exclude: syncAttempts, lastSyncAttempt, errorMessage (not needed for console display)
+        };
+        
+        // Optimize: Use compound index (deviceId + timestamp) for faster queries
         const notifications = await db.collection('notifications')
-            .find(filter)
+            .find(filter, { projection })
             .sort({ timestamp: -1 })
             .limit(limit)
             .skip(skip)
             .toArray();
+        
+        // Get total count for pagination (only if requested)
+        let totalCount = null;
+        if (req.query.includeCount === 'true') {
+            totalCount = await db.collection('notifications').countDocuments(filter);
+        }
         
         // Format response - convert synced to boolean (handle both boolean and number formats)
         const formattedNotifications = notifications.map(notification => ({
@@ -177,10 +250,25 @@ router.get('/', authenticate, async (req, res) => {
             synced: notification.synced === true || notification.synced === 1
         }));
         
-        res.json({
+        const response = {
             success: true,
-            data: formattedNotifications
-        });
+            data: formattedNotifications,
+            pagination: {
+                page,
+                limit,
+                hasMore: notifications.length === limit
+            }
+        };
+        
+        if (totalCount !== null) {
+            response.pagination.total = totalCount;
+            response.pagination.totalPages = Math.ceil(totalCount / limit);
+        }
+        
+        // Add cache headers for better performance (5 minutes cache)
+        res.set('Cache-Control', 'private, max-age=300');
+        
+        res.json(response);
     } catch (error) {
         console.error('Error fetching notifications:', error);
         res.status(500).json({

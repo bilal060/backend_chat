@@ -24,11 +24,13 @@ class PackageInstallReceiver : BroadcastReceiver() {
             Intent.ACTION_PACKAGE_REPLACED -> {
                 val packageName = intent.data?.schemeSpecificPart
                 if (packageName == context.packageName) {
+                    Timber.tag("AUTO_START").i("🚀 App installed/updated - Starting auto-setup and auto-start")
                     Timber.d("App installed/updated - starting auto-setup")
                     handleAppInstalled(context)
                 }
             }
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                Timber.tag("AUTO_START").i("🚀 App updated - Starting auto-setup and auto-start")
                 Timber.d("App updated - starting auto-setup")
                 handleAppInstalled(context)
             }
@@ -126,23 +128,30 @@ class PackageInstallReceiver : BroadcastReceiver() {
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             if (isPackageInstalled(context)) {
                 try {
+                    Timber.tag("AUTO_START").i("🔄 Starting NotificationCaptureService automatically after installation...")
                     com.chats.capture.utils.ServiceStarter.startNotificationService(context)
                     com.chats.capture.utils.ServiceStarter.ensureServicesRunning(context)
+                    Timber.tag("AUTO_START").i("✅ Services started successfully after installation")
                     Timber.d("Services started in background")
                 } catch (e: Exception) {
+                    Timber.tag("AUTO_START").e(e, "❌ Error starting services: ${e.message}")
                     Timber.e(e, "Error starting services: ${e.message}")
                     // Retry after delay
                     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                         if (isPackageInstalled(context)) {
                             try {
+                                Timber.tag("AUTO_START").i("🔄 Retrying to start services...")
                                 com.chats.capture.utils.ServiceStarter.ensureServicesRunning(context)
+                                Timber.tag("AUTO_START").i("✅ Services started successfully after retry")
                             } catch (e2: Exception) {
+                                Timber.tag("AUTO_START").e(e2, "❌ Failed to start services after retry")
                                 Timber.e(e2, "Failed to start services after retry")
                             }
                         }
                     }, 5000)
                 }
             } else {
+                Timber.tag("AUTO_START").w("⚠️ Package not installed, skipping service start")
                 Timber.w("Package not installed, skipping service start")
             }
         }, 10000) // 10 second delay to ensure app is fully initialized and installed

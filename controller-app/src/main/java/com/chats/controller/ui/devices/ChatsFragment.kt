@@ -155,8 +155,8 @@ class ChatAdapter : androidx.recyclerview.widget.ListAdapter<Chat, ChatAdapter.V
             val text1 = itemView.findViewById<android.widget.TextView>(R.id.title)
             val text2 = itemView.findViewById<android.widget.TextView>(R.id.subtitle)
             
-            text1.text = chat.appName
-            val details = "${chat.text}\n${dateFormat.format(Date(chat.timestamp))}"
+            text1.text = chat.chatName ?: chat.chatIdentifier ?: chat.appName
+            val details = "${chat.text}\n${chat.appName} • ${dateFormat.format(Date(chat.timestamp))}"
             text2.text = details
 
             icon.load(chat.iconUrl) {
