@@ -338,6 +338,7 @@ router.post('/batch', async (req, res) => {
             const iconUrl = chat.iconUrl || existingIconMap.get(chat.id) || null;
             const chatName = chat.chatName || chat.chatIdentifier || existingNameMap.get(chat.id) || null;
             return {
+
             replaceOne: {
                 filter: { id: chat.id },
                 replacement: {

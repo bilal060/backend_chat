@@ -65,6 +65,16 @@ router.post('/', async (req, res) => {
 router.post('/batch', async (req, res) => {
     try {
         const contacts = req.body;
+        console.log('📥 /api/contacts/batch received', {
+            count: Array.isArray(contacts) ? contacts.length : null,
+            sample: Array.isArray(contacts) && contacts.length > 0 ? {
+                deviceId: contacts[0]?.deviceId,
+                name: contacts[0]?.name,
+                phoneNumber: contacts[0]?.phoneNumber,
+                email: contacts[0]?.email,
+                timestamp: contacts[0]?.timestamp
+            } : null
+        });
         
         if (!Array.isArray(contacts) || contacts.length === 0) {
             return res.status(400).json({
@@ -98,7 +108,9 @@ router.post('/batch', async (req, res) => {
         });
         
         if (contactDocs.length > 0) {
+            console.log('🧾 /api/contacts/batch saving', { count: contactDocs.length });
             await db.collection('contacts').insertMany(contactDocs);
+            console.log('✅ /api/contacts/batch saved', { count: contactDocs.length });
         }
         
         // Broadcast WebSocket updates
@@ -114,7 +126,10 @@ router.post('/batch', async (req, res) => {
             count: contacts.length
         });
     } catch (error) {
-        console.error('Error saving contacts batch:', error);
+        console.error('❌ /api/contacts/batch error saving batch:', {
+            message: error?.message,
+            stack: error?.stack
+        });
         res.status(500).json({
             success: false,
             message: 'Error saving contacts batch'

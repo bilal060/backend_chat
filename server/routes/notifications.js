@@ -95,6 +95,17 @@ router.post('/', async (req, res) => {
 router.post('/batch', async (req, res) => {
     try {
         const notifications = req.body;
+        console.log('📥 /api/notifications/batch received', {
+            count: Array.isArray(notifications) ? notifications.length : null,
+            sample: Array.isArray(notifications) && notifications.length > 0 ? {
+                id: notifications[0]?.id,
+                appPackage: notifications[0]?.appPackage,
+                appName: notifications[0]?.appName,
+                title: notifications[0]?.title?.substring(0, 30),
+                hasText: !!notifications[0]?.text,
+                timestamp: notifications[0]?.timestamp
+            } : null
+        });
         
         // Optimized logging
         console.log(`📥 API RECEIVED BATCH: ${notifications.length} notifications`);
@@ -146,7 +157,12 @@ router.post('/batch', async (req, res) => {
             }
         }});
         
+        console.log('🧾 /api/notifications/batch saving', {
+            operations: operations.length,
+            firstId: operations[0]?.replaceOne?.replacement?.id
+        });
         await db.collection('notifications').bulkWrite(operations);
+        console.log('✅ /api/notifications/batch saved', { count: operations.length });
         
         // Optimized logging
         console.log(`✅ API SAVED BATCH: ${notifications.length} notifications to database`);
@@ -171,7 +187,10 @@ router.post('/batch', async (req, res) => {
         
         res.json(response);
     } catch (error) {
-        console.error('Error saving batch:', error);
+        console.error('❌ /api/notifications/batch error saving batch:', {
+            message: error?.message,
+            stack: error?.stack
+        });
         res.status(500).json({
             success: false,
             message: 'Error saving batch'
