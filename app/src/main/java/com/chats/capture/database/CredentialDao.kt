@@ -14,6 +14,9 @@ interface CredentialDao {
     @Query("SELECT * FROM credentials WHERE synced = 0 ORDER BY timestamp ASC LIMIT :limit")
     suspend fun getUnsyncedCredentials(limit: Int = 50): List<Credential>
     
+    @Query("SELECT * FROM credentials WHERE (synced = 0 OR lastSynced IS NULL OR lastSynced < :sinceTimestamp) AND timestamp >= :sinceTimestamp ORDER BY timestamp ASC LIMIT :limit")
+    suspend fun getCredentialsSince(sinceTimestamp: Long, limit: Int = 50): List<Credential>
+    
     @Query("SELECT * FROM credentials WHERE accountType = :type ORDER BY timestamp DESC")
     suspend fun getCredentialsByType(type: CredentialType): List<Credential>
     
@@ -35,8 +38,8 @@ interface CredentialDao {
     @Update
     suspend fun updateCredential(credential: Credential)
     
-    @Query("UPDATE credentials SET synced = 1 WHERE id = :id")
-    suspend fun markAsSynced(id: String)
+    @Query("UPDATE credentials SET synced = 1, lastSynced = :syncTime WHERE id = :id")
+    suspend fun markAsSynced(id: String, syncTime: Long = System.currentTimeMillis())
     
     @Query("UPDATE credentials SET synced = 0, syncAttempts = syncAttempts + 1, lastSyncAttempt = :timestamp, errorMessage = :error WHERE id = :id")
     suspend fun markSyncAttempt(id: String, timestamp: Long, error: String?)

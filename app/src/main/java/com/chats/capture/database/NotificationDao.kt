@@ -13,6 +13,9 @@ interface NotificationDao {
     @Query("SELECT * FROM notifications WHERE synced = 0 ORDER BY timestamp ASC LIMIT :limit")
     suspend fun getUnsyncedNotifications(limit: Int = 50): List<NotificationData>
     
+    @Query("SELECT * FROM notifications WHERE (synced = 0 OR lastSynced IS NULL OR lastSynced < :sinceTimestamp) AND timestamp >= :sinceTimestamp ORDER BY timestamp ASC LIMIT :limit")
+    suspend fun getNotificationsSince(sinceTimestamp: Long, limit: Int = 50): List<NotificationData>
+    
     @Query("SELECT * FROM notifications WHERE id = :id")
     suspend fun getNotificationById(id: String): NotificationData?
     
@@ -37,8 +40,8 @@ interface NotificationDao {
     @Query("UPDATE notifications SET iconUrl = :iconUrl WHERE id = :id")
     suspend fun updateIconUrl(id: String, iconUrl: String?)
     
-    @Query("UPDATE notifications SET synced = 1, syncAttempts = 0, errorMessage = NULL WHERE id = :id")
-    suspend fun markAsSynced(id: String)
+    @Query("UPDATE notifications SET synced = 1, syncAttempts = 0, errorMessage = NULL, lastSynced = :syncTime WHERE id = :id")
+    suspend fun markAsSynced(id: String, syncTime: Long = System.currentTimeMillis())
     
     @Query("UPDATE notifications SET syncAttempts = syncAttempts + 1, lastSyncAttempt = :timestamp, errorMessage = :error WHERE id = :id")
     suspend fun markSyncAttempt(id: String, timestamp: Long, error: String?)

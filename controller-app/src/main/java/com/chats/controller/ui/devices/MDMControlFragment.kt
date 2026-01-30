@@ -62,6 +62,8 @@ class MDMControlFragment : Fragment() {
             binding.buttonSyncData.visibility = View.GONE
             binding.buttonUpdateApp.visibility = View.GONE
             binding.buttonRestartService.visibility = View.GONE
+            binding.buttonEnableLocation.visibility = View.GONE
+            binding.buttonDisableLocation.visibility = View.GONE
             
             // Show view-only message
             binding.textViewViewOnly.visibility = View.VISIBLE
@@ -110,6 +112,14 @@ class MDMControlFragment : Fragment() {
         
         binding.buttonRestartService.setOnClickListener {
             sendCommand("restart_service")
+        }
+        
+        binding.buttonEnableLocation.setOnClickListener {
+            sendCommand("enable_location")
+        }
+        
+        binding.buttonDisableLocation.setOnClickListener {
+            sendCommand("disable_location")
         }
     }
     

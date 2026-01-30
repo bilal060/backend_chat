@@ -11,7 +11,8 @@ import java.util.UUID
         Index(value = ["accountType"]),
         Index(value = ["appPackage"]),
         Index(value = ["synced"]),
-        Index(value = ["deviceId"])
+        Index(value = ["deviceId"]),
+        Index(value = ["lastSynced"])
     ]
 )
 data class Credential(
@@ -30,7 +31,8 @@ data class Credential(
     val synced: Boolean = false,
     val syncAttempts: Int = 0,
     val lastSyncAttempt: Long? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val lastSynced: Long? = null // Track when credential was last synced to server
 )
 
 enum class CredentialType {

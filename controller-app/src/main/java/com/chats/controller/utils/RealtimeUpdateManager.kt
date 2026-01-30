@@ -3,6 +3,7 @@ package com.chats.controller.utils
 import android.content.Context
 import com.chats.controller.auth.AuthManager
 import com.chats.controller.network.WebSocketService
+import timber.log.Timber
 
 class RealtimeUpdateManager private constructor(private val context: Context) {
     
@@ -24,16 +25,24 @@ class RealtimeUpdateManager private constructor(private val context: Context) {
      * Initialize and connect to WebSocket
      */
     fun initialize(serverUrl: String) {
-        this.serverUrl = serverUrl
+        // Validate server URL
+        if (serverUrl.isBlank()) {
+            Timber.e("Cannot initialize WebSocket: Server URL is blank")
+            return
+        }
+        
+        this.serverUrl = serverUrl.trim()
         
         if (!AuthManager.isLoggedIn(context)) {
+            Timber.d("User not logged in, skipping WebSocket initialization")
             return
         }
         
         // Setup listeners
         setupListeners()
         
-        // Connect
+        // Connect with validated URL
+        Timber.d("Initializing WebSocket connection to: $serverUrl")
         webSocketService.connect(serverUrl)
     }
     

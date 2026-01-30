@@ -12,7 +12,8 @@ import java.util.UUID
         Index(value = ["chatIdentifier"]),
         Index(value = ["timestamp"]),
         Index(value = ["synced"]),
-        Index(value = ["deviceId"])
+        Index(value = ["deviceId"]),
+        Index(value = ["lastSynced"])
     ]
 )
 data class ChatData(
@@ -30,5 +31,6 @@ data class ChatData(
     val synced: Boolean = false,
     val syncAttempts: Int = 0,
     val lastSyncAttempt: Long? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val lastSynced: Long? = null // Track when chat was last synced to server
 )

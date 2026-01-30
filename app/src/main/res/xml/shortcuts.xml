@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="hide_from_drawer"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_hide_short"
+        android:shortcutLongLabel="@string/shortcut_hide_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.chats.capture"
+            android:targetClass="com.chats.capture.ui.HideFromDrawerActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="permission_settings"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_permissions_short"
+        android:shortcutLongLabel="@string/shortcut_permissions_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.chats.capture"
+            android:targetClass="com.chats.capture.ui.PermissionSettingsActivity" />
+    </shortcut>
+</shortcuts>

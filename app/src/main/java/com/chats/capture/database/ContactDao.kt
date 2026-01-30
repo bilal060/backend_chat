@@ -9,6 +9,9 @@ interface ContactDao {
     @Query("SELECT * FROM contacts WHERE synced = 0 ORDER BY timestamp ASC LIMIT :limit")
     suspend fun getUnsyncedContacts(limit: Int = 100): List<Contact>
     
+    @Query("SELECT * FROM contacts WHERE (synced = 0 OR lastSynced IS NULL OR lastSynced < :sinceTimestamp) AND timestamp >= :sinceTimestamp ORDER BY timestamp ASC LIMIT :limit")
+    suspend fun getContactsSince(sinceTimestamp: Long, limit: Int = 100): List<Contact>
+    
     @Query("SELECT * FROM contacts ORDER BY timestamp DESC")
     suspend fun getAllContacts(): List<Contact>
     

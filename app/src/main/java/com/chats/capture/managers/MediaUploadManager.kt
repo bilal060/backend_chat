@@ -24,6 +24,11 @@ class MediaUploadManager(
     
     private val uploadManager = UploadManager(context, ApiClient.getApiService())
     
+    companion object {
+        // Maximum file size for upload (20MB)
+        private const val MAX_UPLOAD_SIZE = 20 * 1024 * 1024L // 20MB
+    }
+    
     suspend fun uploadMediaFile(mediaFile: MediaFile): Boolean = withContext(Dispatchers.IO) {
         try {
             // If another file with same checksum is already uploaded, reuse its URL
@@ -62,6 +67,19 @@ class MediaUploadManager(
                     UploadStatus.FAILED,
                     System.currentTimeMillis(),
                     "File does not exist"
+                )
+                return@withContext false
+            }
+            
+            // Check file size - skip files larger than 20MB
+            val fileSize = file.length()
+            if (fileSize > MAX_UPLOAD_SIZE) {
+                Timber.tag("MEDIA_UPLOAD").w("⚠️ File size ${fileSize / (1024 * 1024)}MB exceeds 20MB limit - Skipping upload: ${file.name}")
+                mediaFileDao.markUploadAttempt(
+                    mediaFile.id,
+                    UploadStatus.PERMANENTLY_FAILED,
+                    System.currentTimeMillis(),
+                    "File size ${fileSize / (1024 * 1024)}MB exceeds 20MB limit"
                 )
                 return@withContext false
             }

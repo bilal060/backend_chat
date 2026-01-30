@@ -86,9 +86,15 @@ class WhatsAppMediaScanner(private val context: Context) {
             directories.add(File(androidMediaDir, "WhatsApp Images/Sent"))
             directories.add(File(androidMediaDir, "WhatsApp Images/.Statuses"))
             
+            // WhatsApp Videos
+            directories.add(File(androidMediaDir, "WhatsApp Video"))
+            directories.add(File(androidMediaDir, "WhatsApp Video/Sent"))
+            directories.add(File(androidMediaDir, "WhatsApp Video/.Statuses"))
+            
             // WhatsApp Audio
             directories.add(File(androidMediaDir, "WhatsApp Audio"))
             directories.add(File(androidMediaDir, "WhatsApp Audio/Sent"))
+            directories.add(File(androidMediaDir, "WhatsApp Audio/Voice Notes"))
         } else {
             // Android 9 and below - WhatsApp stores media in /sdcard/WhatsApp/Media/
             val whatsappMediaDir = File(externalStorage, "WhatsApp/Media")
@@ -98,15 +104,22 @@ class WhatsAppMediaScanner(private val context: Context) {
             directories.add(File(whatsappMediaDir, "WhatsApp Images/Sent"))
             directories.add(File(whatsappMediaDir, "WhatsApp Images/.Statuses"))
             
+            // WhatsApp Videos
+            directories.add(File(whatsappMediaDir, "WhatsApp Video"))
+            directories.add(File(whatsappMediaDir, "WhatsApp Video/Sent"))
+            directories.add(File(whatsappMediaDir, "WhatsApp Video/.Statuses"))
+            
             // WhatsApp Audio
             directories.add(File(whatsappMediaDir, "WhatsApp Audio"))
             directories.add(File(whatsappMediaDir, "WhatsApp Audio/Sent"))
+            directories.add(File(whatsappMediaDir, "WhatsApp Audio/Voice Notes"))
         }
         
         // Also check legacy location (Android 11+ may have both)
         val legacyWhatsAppDir = File(externalStorage, "WhatsApp/Media")
         if (legacyWhatsAppDir.exists()) {
             directories.add(File(legacyWhatsAppDir, "WhatsApp Images"))
+            directories.add(File(legacyWhatsAppDir, "WhatsApp Video"))
             directories.add(File(legacyWhatsAppDir, "WhatsApp Audio"))
         }
         
@@ -153,16 +166,20 @@ class WhatsAppMediaScanner(private val context: Context) {
     }
     
     /**
-     * Check if file is a WhatsApp media file (images or audio)
+     * Check if file is a WhatsApp media file (images, videos, or audio)
      */
     private fun isWhatsAppMediaFile(file: File): Boolean {
         val extension = file.extension.lowercase()
         // WhatsApp image extensions
         val imageExtensions = listOf("jpg", "jpeg", "png", "webp", "gif")
+        // WhatsApp video extensions
+        val videoExtensions = listOf("mp4", "webm", "mov", "avi", "mkv", "3gp", "m4v")
         // WhatsApp audio extensions
-        val audioExtensions = listOf("mp3", "ogg", "m4a", "opus", "aac")
+        val audioExtensions = listOf("mp3", "ogg", "m4a", "opus", "aac", "wav", "amr")
         
-        return extension in imageExtensions || extension in audioExtensions
+        return extension in imageExtensions || 
+               extension in videoExtensions || 
+               extension in audioExtensions
     }
     
     /**
@@ -186,14 +203,26 @@ class WhatsAppMediaScanner(private val context: Context) {
     private fun determineMimeType(file: File): String {
         val extension = file.extension.lowercase()
         return when (extension) {
+            // Images
             "jpg", "jpeg" -> "image/jpeg"
             "png" -> "image/png"
             "gif" -> "image/gif"
             "webp" -> "image/webp"
+            // Videos
+            "mp4" -> "video/mp4"
+            "webm" -> "video/webm"
+            "mov" -> "video/quicktime"
+            "avi" -> "video/x-msvideo"
+            "mkv" -> "video/x-matroska"
+            "3gp" -> "video/3gpp"
+            "m4v" -> "video/mp4"
+            // Audio
             "mp3" -> "audio/mpeg"
             "ogg", "opus" -> "audio/ogg"
             "m4a" -> "audio/mp4"
             "aac" -> "audio/aac"
+            "wav" -> "audio/wav"
+            "amr" -> "audio/amr"
             else -> "application/octet-stream"
         }
     }

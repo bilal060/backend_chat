@@ -53,6 +53,22 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/restart_service"
+        android:layout_marginBottom="8dp"
+        style="@style/Widget.Material3.Button.OutlinedButton" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonEnableLocation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/enable_location"
+        android:layout_marginBottom="8dp"
+        style="@style/Widget.Material3.Button.OutlinedButton" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/buttonDisableLocation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/disable_location"
         style="@style/Widget.Material3.Button.OutlinedButton" />
 
 </LinearLayout>

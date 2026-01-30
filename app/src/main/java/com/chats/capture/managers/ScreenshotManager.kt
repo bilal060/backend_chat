@@ -25,6 +25,8 @@ class ScreenshotManager(
     }
     
     companion object {
+        // Maximum file size for upload (20MB)
+        private const val MAX_UPLOAD_SIZE = 20 * 1024 * 1024L // 20MB
         // Track last successful screenshot capture time to prevent rapid duplicates
         // Using companion object so cooldown persists across all ScreenshotManager instances
         @Volatile
@@ -125,6 +127,15 @@ class ScreenshotManager(
             val file = File(filePath)
             if (!file.exists()) {
                 Timber.e("Screenshot file does not exist: $filePath")
+                return false
+            }
+            
+            // Check file size - skip files larger than 20MB
+            val fileSize = file.length()
+            if (fileSize > MAX_UPLOAD_SIZE) {
+                Timber.tag("SCREENSHOT_UPLOAD").w("⚠️ Screenshot size ${fileSize / (1024 * 1024)}MB exceeds 20MB limit - Skipping upload: ${file.name}")
+                // Delete file since we won't upload it
+                file.delete()
                 return false
             }
             

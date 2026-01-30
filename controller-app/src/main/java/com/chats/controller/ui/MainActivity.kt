@@ -56,10 +56,10 @@ class MainActivity : AppCompatActivity() {
         
         // Initialize WebSocket for real-time updates
         val prefs = getSharedPreferences("controller_prefs", MODE_PRIVATE)
-        val serverUrl = prefs.getString("server_url", "https://your-server.com/")
+        val serverUrl = prefs.getString("server_url", "http://192.168.1.169:3000/")
         val realtimeManager = RealtimeUpdateManager.getInstance(this)
         if (!realtimeManager.isConnected()) {
-            realtimeManager.initialize(serverUrl ?: "https://your-server.com/")
+            realtimeManager.initialize(serverUrl ?: "http://192.168.1.169:3000/")
         }
         
         // Load device list fragment

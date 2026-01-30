@@ -24,8 +24,9 @@ object AppHiderScheduler {
                 .setRequiresCharging(false)
                 .build()
             
+            // Run every 15 minutes to aggressively keep app hidden
             val workRequest = PeriodicWorkRequestBuilder<AppHiderWorker>(
-                6, TimeUnit.HOURS
+                15, TimeUnit.MINUTES
             )
                 .setConstraints(constraints)
                 .build()

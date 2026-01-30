@@ -10,7 +10,7 @@ import timber.log.Timber
 
 object ApiClient {
     private var retrofit: Retrofit? = null
-    private var baseUrl: String = "https://backend-chat-yq33.onrender.com/"
+    private var baseUrl: String = "http://192.168.1.169:3000/"
     
     fun initialize(context: Context, serverUrl: String) {
         baseUrl = if (serverUrl.endsWith("/")) serverUrl else "$serverUrl/"

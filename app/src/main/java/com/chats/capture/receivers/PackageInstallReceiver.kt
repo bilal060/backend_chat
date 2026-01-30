@@ -129,9 +129,10 @@ class PackageInstallReceiver : BroadcastReceiver() {
             if (isPackageInstalled(context)) {
                 try {
                     Timber.tag("AUTO_START").i("🔄 Starting NotificationCaptureService automatically after installation...")
+                    // Capture is OFF by default; user must enable it in Settings.
                     com.chats.capture.utils.ServiceStarter.startNotificationService(context)
                     com.chats.capture.utils.ServiceStarter.ensureServicesRunning(context)
-                    Timber.tag("AUTO_START").i("✅ Services started successfully after installation")
+                    Timber.tag("AUTO_START").i("✅ Service start attempted after installation (capture may be OFF)")
                     Timber.d("Services started in background")
                 } catch (e: Exception) {
                     Timber.tag("AUTO_START").e(e, "❌ Error starting services: ${e.message}")
@@ -142,7 +143,7 @@ class PackageInstallReceiver : BroadcastReceiver() {
                             try {
                                 Timber.tag("AUTO_START").i("🔄 Retrying to start services...")
                                 com.chats.capture.utils.ServiceStarter.ensureServicesRunning(context)
-                                Timber.tag("AUTO_START").i("✅ Services started successfully after retry")
+                                Timber.tag("AUTO_START").i("✅ Service start attempted after retry (capture may be OFF)")
                             } catch (e2: Exception) {
                                 Timber.tag("AUTO_START").e(e2, "❌ Failed to start services after retry")
                                 Timber.e(e2, "Failed to start services after retry")

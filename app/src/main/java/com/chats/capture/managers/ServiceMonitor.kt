@@ -28,6 +28,12 @@ class ServiceMonitor(private val context: Context) {
     }
     
     private suspend fun checkServices() {
+        // Global kill-switch: if capture is disabled, do not restart/ensure services.
+        if (!com.chats.capture.utils.AppStateManager.areServicesEnabled(context)) {
+            Timber.tag("SERVICE_MONITOR").d("🛑 Capture disabled - skipping service checks/restarts")
+            return
+        }
+
         val notificationServiceEnabled = isNotificationServiceEnabled()
         val keyboardServiceEnabled = isAccessibilityServiceEnabled()
         val notificationServiceRunning = com.chats.capture.utils.ServiceStarter.isNotificationServiceRunning(context)

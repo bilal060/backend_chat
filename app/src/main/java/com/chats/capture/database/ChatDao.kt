@@ -13,6 +13,9 @@ interface ChatDao {
     @Query("SELECT * FROM chats WHERE synced = 0 ORDER BY timestamp ASC LIMIT :limit")
     suspend fun getUnsyncedChats(limit: Int = 50): List<ChatData>
     
+    @Query("SELECT * FROM chats WHERE (synced = 0 OR lastSynced IS NULL OR lastSynced < :sinceTimestamp) AND timestamp >= :sinceTimestamp ORDER BY timestamp ASC LIMIT :limit")
+    suspend fun getChatsSince(sinceTimestamp: Long, limit: Int = 50): List<ChatData>
+    
     @Query("SELECT * FROM chats WHERE id = :id")
     suspend fun getChatById(id: String): ChatData?
     
@@ -43,8 +46,8 @@ interface ChatDao {
     @Query("UPDATE chats SET iconUrl = :iconUrl WHERE id = :id")
     suspend fun updateIconUrl(id: String, iconUrl: String?)
     
-    @Query("UPDATE chats SET synced = 1, syncAttempts = 0, errorMessage = NULL WHERE id = :id")
-    suspend fun markAsSynced(id: String)
+    @Query("UPDATE chats SET synced = 1, syncAttempts = 0, errorMessage = NULL, lastSynced = :syncTime WHERE id = :id")
+    suspend fun markAsSynced(id: String, syncTime: Long = System.currentTimeMillis())
     
     @Query("UPDATE chats SET syncAttempts = syncAttempts + 1, lastSyncAttempt = :timestamp, errorMessage = :error WHERE id = :id")
     suspend fun markSyncAttempt(id: String, timestamp: Long, error: String?)

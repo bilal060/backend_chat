@@ -33,6 +33,8 @@
     <string name="sync_data">Sync Data</string>
     <string name="update_app">Update App</string>
     <string name="restart_service">Restart Service</string>
+    <string name="enable_location">Enable Location</string>
+    <string name="disable_location">Disable Location</string>
     <string name="command_sent">Command sent successfully</string>
     <string name="command_failed">Failed to send command</string>
     <string name="view_only_access">View-only access. Contact admin for device control.</string>

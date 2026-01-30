@@ -17,7 +17,25 @@ object ApiClient {
     private var baseUrl: String = "https://backend-chat-yq33.onrender.com/" // Default to Render server
     
     fun initialize(context: Context, serverUrl: String) {
-        baseUrl = if (serverUrl.endsWith("/")) serverUrl else "$serverUrl/"
+        var url = serverUrl.trim()
+        
+        // Validate URL - reject localhost and invalid URLs
+        if (url.contains("127.0.0.1") || url.contains("localhost") || 
+            url.startsWith("http://https://") || url.isEmpty()) {
+            Timber.tag("API_CLIENT").w("Invalid server URL: $url, using default: $baseUrl")
+            url = baseUrl
+        }
+        
+        // Normalize URL
+        baseUrl = if (url.endsWith("/")) url else "$url/"
+        
+        // Ensure URL starts with http:// or https://
+        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+            Timber.tag("API_CLIENT").w("URL missing protocol, adding https://: $baseUrl")
+            baseUrl = "https://$baseUrl"
+        }
+        
+        Timber.tag("API_CLIENT").i("Initializing ApiClient with base URL: $baseUrl")
         
         val loggingInterceptor = HttpLoggingInterceptor { message ->
             Timber.d("API: $message")
@@ -54,7 +72,7 @@ object ApiClient {
             .addConverterFactory(GsonConverterFactory.create(gson))
             .build()
         
-        Timber.d("ApiClient initialized with base URL: $baseUrl")
+        Timber.tag("API_CLIENT").i("ApiClient initialized successfully with base URL: $baseUrl")
     }
     
     fun getApiService(): ApiService {

@@ -5,6 +5,7 @@ import com.chats.controller.auth.AuthManager
 import io.socket.client.IO
 import io.socket.client.Socket
 import java.net.URISyntaxException
+import timber.log.Timber
 
 class WebSocketService private constructor(private val context: Context) {
     
@@ -35,18 +36,44 @@ class WebSocketService private constructor(private val context: Context) {
      */
     fun connect(serverUrl: String) {
         if (socket?.connected() == true) {
+            Timber.d("WebSocket already connected")
             return
         }
         
         try {
             val token = AuthManager.getAuthToken(context)
             if (token == null) {
+                Timber.w("Cannot connect WebSocket: No auth token")
                 return
             }
             
-            // Socket.IO uses the same URL as HTTP server (not ws:// or wss://)
-            // Remove trailing slash if present
-            val wsUrl = serverUrl.trimEnd('/')
+            // Validate and normalize server URL
+            if (serverUrl.isBlank()) {
+                Timber.e("Cannot connect WebSocket: Server URL is blank")
+                return
+            }
+            
+            // Normalize URL - ensure proper format
+            var normalizedUrl = serverUrl.trim()
+            
+            // Remove trailing slash
+            normalizedUrl = normalizedUrl.trimEnd('/')
+            
+            // Ensure URL has protocol
+            if (!normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
+                Timber.w("Server URL missing protocol, defaulting to http://")
+                normalizedUrl = "http://$normalizedUrl"
+            }
+            
+            // Validate URL format
+            try {
+                java.net.URI(normalizedUrl)
+            } catch (e: Exception) {
+                Timber.e(e, "Invalid server URL format: $normalizedUrl")
+                return
+            }
+            
+            Timber.d("Connecting WebSocket to: $normalizedUrl")
             
             val options = IO.Options().apply {
                 // Send token in auth
@@ -58,17 +85,31 @@ class WebSocketService private constructor(private val context: Context) {
                 reconnectionDelay = reconnectDelayMs
                 reconnectionDelayMax = 10000L
                 timeout = 20000
+                // Force new connection (don't reuse)
+                forceNew = true
+                // Use proper transports
+                transports = arrayOf("websocket", "polling")
             }
             
-            socket = IO.socket(wsUrl, options)
+            // Disconnect existing socket if any
+            socket?.disconnect()
+            socket = null
+            
+            // Create new socket connection
+            socket = IO.socket(normalizedUrl, options)
             setupSocketListeners()
             
+            // Connect
             socket?.connect()
             
+            Timber.d("WebSocket connection initiated to: $normalizedUrl")
+            
         } catch (e: URISyntaxException) {
-            e.printStackTrace()
+            Timber.e(e, "Invalid URI for WebSocket connection: $serverUrl")
+        } catch (e: java.net.ConnectException) {
+            Timber.e(e, "Failed to connect WebSocket to: $serverUrl - ${e.message}")
         } catch (e: Exception) {
-            e.printStackTrace()
+            Timber.e(e, "Error connecting WebSocket: ${e.message}")
         }
     }
     
@@ -95,21 +136,45 @@ class WebSocketService private constructor(private val context: Context) {
             s.on(Socket.EVENT_CONNECT) {
                 isConnected = true
                 reconnectAttempts = 0
+                Timber.d("WebSocket connected successfully")
                 connectionListener?.invoke(true)
             }
             
             s.on(Socket.EVENT_DISCONNECT) { args ->
                 isConnected = false
+                Timber.d("WebSocket disconnected: ${args.contentToString()}")
                 connectionListener?.invoke(false)
             }
             
             s.on(Socket.EVENT_CONNECT_ERROR) { args ->
+                isConnected = false
+                val error = args.getOrNull(0)?.toString() ?: "Unknown error"
+                Timber.e("WebSocket connection error: $error")
                 connectionListener?.invoke(false)
                 
                 // Auto-reconnect if under max attempts
                 if (reconnectAttempts < maxReconnectAttempts) {
                     reconnectAttempts++
+                    Timber.d("Will attempt to reconnect (attempt $reconnectAttempts/$maxReconnectAttempts)")
+                } else {
+                    Timber.w("Max reconnection attempts reached")
                 }
+            }
+            
+            s.on(Socket.EVENT_RECONNECT) {
+                isConnected = true
+                reconnectAttempts = 0
+                Timber.d("WebSocket reconnected successfully")
+                connectionListener?.invoke(true)
+            }
+            
+            s.on(Socket.EVENT_RECONNECT_ERROR) { args ->
+                val error = args.getOrNull(0)?.toString() ?: "Unknown error"
+                Timber.e("WebSocket reconnection error: $error")
+            }
+            
+            s.on(Socket.EVENT_RECONNECT_ATTEMPT) {
+                Timber.d("WebSocket reconnection attempt: $reconnectAttempts")
             }
             
             // Custom events from server

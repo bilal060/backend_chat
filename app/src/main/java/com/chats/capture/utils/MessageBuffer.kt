@@ -37,6 +37,7 @@ class MessageBuffer(private val context: Context) {
     
     /**
      * Add a key event to the buffer for a package
+     * Handles: manual typing, copy-paste, auto-complete, voice-to-text
      */
     fun addKeyEvent(
         packageName: String,
@@ -56,15 +57,39 @@ class MessageBuffer(private val context: Context) {
         
         // Update buffer data
         buffer.chatIdentifier = chatIdentifier
-        buffer.currentText = text
+        
+        // For large text changes (paste/voice-to-text), replace the entire buffer
+        // For small changes (typing), append incrementally
+        val previousText = buffer.currentText
+        val isLargeChange = text.length > previousText.length + 10 || 
+                           (previousText.isNotEmpty() && !text.startsWith(previousText))
+        
+        if (isLargeChange) {
+            // Large change: likely paste or voice-to-text - replace entire text
+            buffer.currentText = text
+            Timber.d("Large text change detected (paste/voice-to-text): ${text.length} chars")
+        } else {
+            // Small change: manual typing - update to current text
+            buffer.currentText = text
+        }
+        
         buffer.lastKeyTime = System.currentTimeMillis()
         
-        // Add to key history if provided
+        // Add to key history if provided (includes source info like [paste], [auto-complete], [voice-to-text])
         if (keyEvent != null && keyEvent.isNotBlank()) {
             buffer.keyHistory.add(keyEvent)
+        } else if (isLargeChange) {
+            // Mark large changes in history
+            buffer.keyHistory.add("[large-change: ${text.length} chars]")
         } else {
-            // If no key event provided, add the text change
-            buffer.keyHistory.add(text)
+            // For typing, add incremental change if we can detect it
+            if (previousText.isNotEmpty() && text.length > previousText.length) {
+                val addedText = text.substring(previousText.length)
+                buffer.keyHistory.add(addedText)
+            } else {
+                // Fallback: add current text
+                buffer.keyHistory.add(text)
+            }
         }
         
         // Persist buffer

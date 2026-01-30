@@ -17,7 +17,7 @@ class ControllerApplication : Application() {
         
         // Initialize API client with default server URL
         val prefs = getSharedPreferences("controller_prefs", MODE_PRIVATE)
-        val defaultUrl = "https://backend-chat-yq33.onrender.com/"
+        val defaultUrl = "http://192.168.1.169:3000/"
         val serverUrl = prefs.getString("server_url", defaultUrl)
         ApiClient.initialize(this, serverUrl ?: defaultUrl)
         

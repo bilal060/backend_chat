@@ -27,7 +27,7 @@ class SettingsActivity : AppCompatActivity() {
         
         // Load current server URL
         val prefs = getSharedPreferences("controller_prefs", MODE_PRIVATE)
-        val currentUrl = prefs.getString("server_url", "https://your-server.com/")
+        val currentUrl = prefs.getString("server_url", "http://192.168.1.169:3000/")
         binding.editServerUrl.setText(currentUrl)
         
         // Save button click

